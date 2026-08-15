@@ -1,0 +1,16 @@
+{
+  "name": "مَكْسَب الاستثمارية",
+  "short_name": "مَكْسَب",
+  "start_url": "/app",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#d4af37",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/color/512/gold-bars.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
