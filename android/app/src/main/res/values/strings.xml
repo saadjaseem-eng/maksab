@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Maksab</string>
-    <string name="title_activity_main">Maksab</string>
-    <string name="package_name">com.maksab.app</string>
-    <string name="custom_url_scheme">com.maksab.app</string>
-</resources>
