@@ -177,11 +177,8 @@ app.get('/app', (req, res) => {
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
         
-        /* تعديل مكان القائمة المنسدلة للإشعارات خصيصاً للهواتف لتظل داخل حدود الشاشة تماماً */
-        .notif-dropdown { position: absolute; top: 50px; left: -10px; right: auto; width: 300px; max-width: 88vw; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 999; display: none; }
-        @media(max-width: 450px) {
-          .notif-dropdown { left: -50px; }
-        }
+        /* التعديل الجذري والنهائي لتمركز القائمة داخل حدود الشاشة بشكل مثالي */
+        .notif-dropdown { position: fixed; top: 80px; left: 15px; right: 15px; width: auto; max-width: 450px; margin: 0 auto; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 15px 40px rgba(0,0,0,0.9); z-index: 99999; display: none; }
 
         .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
         .notif-item.read { border-right-color: #334155; opacity: 0.7; }
