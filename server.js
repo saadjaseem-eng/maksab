@@ -122,7 +122,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر (مخصصة بالكامل للباقات الشهرية والسنوية)
+// 1. واجهة المستثمر
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -177,15 +177,14 @@ app.get('/app', (req, res) => {
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
         
-        /* التحويل الكامل إلى Modal مركزي يضمن التوسيط الكامل بغض النظر عن موقع زر الجرس */
-        .notif-dropdown { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 420px; background: var(--card-bg); border: 2px solid var(--accent-gold); border-radius: 20px; padding: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.95); z-index: 999999; display: none; }
-        .notif-backdrop { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 999998; display: none; }
-
-        .notif-item { background: #0f172a; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; border-right: 4px solid var(--accent-gold); }
+        /* تعديل متمركز وآمن تماماً لشاشات الهواتف يمنع الخروج عن الحواف */
+        .notif-dropdown { position: absolute; top: 55px; right: 0px; left: auto; width: 300px; max-width: 85vw; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.9); z-index: 9999; display: none; }
+        
+        .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
         .notif-item.read { border-right-color: #334155; opacity: 0.7; }
-        .notif-item-title { font-weight: bold; font-size: 13px; color: var(--accent-gold); }
-        .notif-item-msg { font-size: 12px; color: var(--text-main); margin-top: 4px; }
-        .notif-item-date { font-size: 10px; color: var(--text-muted); margin-top: 6px; text-align: left; }
+        .notif-item-title { font-weight: bold; font-size: 12px; color: var(--accent-gold); }
+        .notif-item-msg { font-size: 11px; color: var(--text-main); margin-top: 3px; }
+        .notif-item-date { font-size: 9px; color: var(--text-muted); margin-top: 4px; text-align: left; }
       </style>
     </head>
     <body>
@@ -215,9 +214,6 @@ app.get('/app', (req, res) => {
 
         <!-- اللوحة الرئيسية -->
         <div id="dashboard-section" style="display:none;">
-          <!-- الخلفية المعتمة للقائمة المنبثقة -->
-          <div class="notif-backdrop" id="notif-backdrop" onclick="toggleNotifs()"></div>
-
           <div class="top-nav">
             <div>
               <strong style="color:var(--accent-gold);"><span id="user-name"></span></strong>
@@ -230,27 +226,24 @@ app.get('/app', (req, res) => {
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
-              <select class="currency-toggle" id="currency-toggle" onchange="loadUserData()">
-                <option value="IQD">IQD د.ع</option>
-                <option value="USD">USD $</option>
-              </select>
-
               <div class="notif-bell-container" onclick="toggleNotifs()">
                 <div class="notif-bell-icon"><i class="fa-solid fa-bell"></i></div>
                 <span class="notif-count-badge" id="notif-badge" style="display:none;">0</span>
                 
-                <!-- نافذة الإشعارات المركزية -->
-                <div class="notif-dropdown" id="notif-dropdown" onclick="event.stopPropagation()">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #334155; padding-bottom:8px;">
-                    <strong style="font-size:14px; color:var(--accent-gold);">🔔 الإشعارات والتنبيهات</strong>
-                    <small onclick="markAllNotifsRead(event)" style="font-size:11px; color:var(--text-muted); cursor:pointer;">تحديد الكل كمقروء</small>
+                <div class="notif-dropdown" id="notif-dropdown">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #334155; padding-bottom:5px;">
+                    <strong style="font-size:12px; color:var(--accent-gold);">🔔 الإشعارات والتنبيهات</strong>
+                    <small onclick="markAllNotifsRead(event)" style="font-size:10px; color:var(--text-muted); cursor:pointer;">تحديد الكل كمقروء</small>
                   </div>
-                  <div id="notif-list-container" style="max-height:280px; overflow-y:auto;"></div>
-                  <button onclick="toggleNotifs()" class="btn-gold" style="margin-top:12px; padding:8px; font-size:13px;">إغلاق القائمة</button>
+                  <div id="notif-list-container" style="max-height:220px; overflow-y:auto;"></div>
                 </div>
               </div>
 
-              <button onclick="logout()" style="background:transparent; color:var(--danger-red); border:none; cursor:pointer; font-size:16px;"><i class="fa-solid fa-power-off"></i></button>
+              <select class="currency-toggle" id="currency-toggle" onchange="loadUserData()">
+                <option value="IQD">IQD د.ع</option>
+                <option value="USD">USD $</option>
+              </select>
+              <button onclick="logout()" style="background:transparent; color:var(--danger-red); border:none; cursor:pointer;"><i class="fa-solid fa-power-off"></i> خروج</button>
             </div>
           </div>
 
@@ -558,7 +551,7 @@ app.get('/app', (req, res) => {
 
           var container = document.getElementById('notif-list-container');
           if (notifs.length === 0) {
-            container.innerHTML = '<p style="font-size:12px; color:var(--text-muted); text-align:center;">لا توجد إشعارات</p>';
+            container.innerHTML = '<p style="font-size:11px; color:var(--text-muted); text-align:center;">لا توجد إشعارات</p>';
             return;
           }
 
@@ -574,10 +567,7 @@ app.get('/app', (req, res) => {
 
         function toggleNotifs() {
           var dropdown = document.getElementById('notif-dropdown');
-          var backdrop = document.getElementById('notif-backdrop');
-          var isOpen = dropdown.style.display === 'block';
-          dropdown.style.display = isOpen ? 'none' : 'block';
-          backdrop.style.display = isOpen ? 'none' : 'block';
+          dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
         }
 
         async function markAllNotifsRead(evt) {
@@ -726,7 +716,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة المبسطة والمختصة للباقات
+// 2. لوحة الإدارة المبسطة
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -996,7 +986,6 @@ app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) =
   res.json({ success: true });
 });
 
-// صرف أرباح الباقات المكتملة تلقائياً
 app.post('/api/admin/packages/payout', authenticateAdmin, async (req, res) => {
   try {
     const now = new Date().toISOString();
