@@ -177,14 +177,15 @@ app.get('/app', (req, res) => {
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
         
-        /* القائمة المنسدلة من جهة اليمين تماماً بجانب زر الخروج لتستغل المساحة بالكامل */
-        .notif-dropdown { position: absolute; top: 55px; right: 0; left: auto; width: 320px; max-width: 90vw; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 999; display: none; }
+        /* التحويل الكامل إلى Modal مركزي يضمن التوسيط الكامل بغض النظر عن موقع زر الجرس */
+        .notif-dropdown { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 420px; background: var(--card-bg); border: 2px solid var(--accent-gold); border-radius: 20px; padding: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.95); z-index: 999999; display: none; }
+        .notif-backdrop { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 999998; display: none; }
 
-        .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
+        .notif-item { background: #0f172a; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; border-right: 4px solid var(--accent-gold); }
         .notif-item.read { border-right-color: #334155; opacity: 0.7; }
-        .notif-item-title { font-weight: bold; font-size: 12px; color: var(--accent-gold); }
-        .notif-item-msg { font-size: 11px; color: var(--text-main); margin-top: 3px; }
-        .notif-item-date { font-size: 9px; color: var(--text-muted); margin-top: 4px; text-align: left; }
+        .notif-item-title { font-weight: bold; font-size: 13px; color: var(--accent-gold); }
+        .notif-item-msg { font-size: 12px; color: var(--text-main); margin-top: 4px; }
+        .notif-item-date { font-size: 10px; color: var(--text-muted); margin-top: 6px; text-align: left; }
       </style>
     </head>
     <body>
@@ -214,6 +215,9 @@ app.get('/app', (req, res) => {
 
         <!-- اللوحة الرئيسية -->
         <div id="dashboard-section" style="display:none;">
+          <!-- الخلفية المعتمة للقائمة المنبثقة -->
+          <div class="notif-backdrop" id="notif-backdrop" onclick="toggleNotifs()"></div>
+
           <div class="top-nav">
             <div>
               <strong style="color:var(--accent-gold);"><span id="user-name"></span></strong>
@@ -225,7 +229,6 @@ app.get('/app', (req, res) => {
               </div>
             </div>
 
-            <!-- تم النقل بجانب زر الخروج والتحكم في أقصى اليمين -->
             <div style="display:flex; gap:12px; align-items:center;">
               <select class="currency-toggle" id="currency-toggle" onchange="loadUserData()">
                 <option value="IQD">IQD د.ع</option>
@@ -236,12 +239,14 @@ app.get('/app', (req, res) => {
                 <div class="notif-bell-icon"><i class="fa-solid fa-bell"></i></div>
                 <span class="notif-count-badge" id="notif-badge" style="display:none;">0</span>
                 
-                <div class="notif-dropdown" id="notif-dropdown">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #334155; padding-bottom:5px;">
-                    <strong style="font-size:12px; color:var(--accent-gold);">🔔 الإشعارات والتنبيهات</strong>
-                    <small onclick="markAllNotifsRead(event)" style="font-size:10px; color:var(--text-muted); cursor:pointer;">تحديد الكل كمقروء</small>
+                <!-- نافذة الإشعارات المركزية -->
+                <div class="notif-dropdown" id="notif-dropdown" onclick="event.stopPropagation()">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #334155; padding-bottom:8px;">
+                    <strong style="font-size:14px; color:var(--accent-gold);">🔔 الإشعارات والتنبيهات</strong>
+                    <small onclick="markAllNotifsRead(event)" style="font-size:11px; color:var(--text-muted); cursor:pointer;">تحديد الكل كمقروء</small>
                   </div>
-                  <div id="notif-list-container" style="max-height:220px; overflow-y:auto;"></div>
+                  <div id="notif-list-container" style="max-height:280px; overflow-y:auto;"></div>
+                  <button onclick="toggleNotifs()" class="btn-gold" style="margin-top:12px; padding:8px; font-size:13px;">إغلاق القائمة</button>
                 </div>
               </div>
 
@@ -553,7 +558,7 @@ app.get('/app', (req, res) => {
 
           var container = document.getElementById('notif-list-container');
           if (notifs.length === 0) {
-            container.innerHTML = '<p style="font-size:11px; color:var(--text-muted); text-align:center;">لا توجد إشعارات</p>';
+            container.innerHTML = '<p style="font-size:12px; color:var(--text-muted); text-align:center;">لا توجد إشعارات</p>';
             return;
           }
 
@@ -569,7 +574,10 @@ app.get('/app', (req, res) => {
 
         function toggleNotifs() {
           var dropdown = document.getElementById('notif-dropdown');
-          dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+          var backdrop = document.getElementById('notif-backdrop');
+          var isOpen = dropdown.style.display === 'block';
+          dropdown.style.display = isOpen ? 'none' : 'block';
+          backdrop.style.display = isOpen ? 'none' : 'block';
         }
 
         async function markAllNotifsRead(evt) {
