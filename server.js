@@ -176,7 +176,7 @@ app.get('/app', (req, res) => {
         .notif-bell-container { position: relative; cursor: pointer; }
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
-        .notif-dropdown { position: absolute; top: 55px; left: 0; width: 310px; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 999; display: none; }
+        .notif-dropdown { position: absolute; top: 55px; right: 0; width: 310px; max-width: 90vw; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 999; display: none; }
         .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
         .notif-item.read { border-right-color: #334155; opacity: 0.7; }
         .notif-item-title { font-weight: bold; font-size: 12px; color: var(--accent-gold); }
