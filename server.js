@@ -177,8 +177,8 @@ app.get('/app', (req, res) => {
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
         
-        /* تعديل متمركز وآمن تماماً لشاشات الهواتف يمنع الخروج عن الحواف */
-        .notif-dropdown { position: absolute; top: 55px; right: 0px; left: auto; width: 300px; max-width: 85vw; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.9); z-index: 9999; display: none; }
+        /* حل نهائي: تثبيت القائمة باستخدام fixed وتمركزها داخل الشاشة تماماً لعدم الخروج عن الحواف */
+        .notif-dropdown { position: fixed; top: 75px; left: 10px; right: 10px; width: auto; max-width: 400px; margin: 0 auto; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.95); z-index: 99999; display: none; }
         
         .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
         .notif-item.read { border-right-color: #334155; opacity: 0.7; }
