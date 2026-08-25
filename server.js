@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { supabase } from './config/supabaseClient.js';
+import axios from 'axios';
 
 dotenv.config();
 
@@ -18,6 +19,33 @@ const EXCHANGE_RATE = process.env.EXCHANGE_RATE || 1500;
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_BOT_NAME = process.env.TELEGRAM_BOT_NAME || 'MaksabBot';
+
+// مفاتيح OneSignal الإشعارات
+const ONE_SIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
+const ONE_SIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
+
+// ==========================================
+// دالة إرسال إشعارات OneSignal للموبايل
+// ==========================================
+async function sendOneSignalNotification(playerIds, title, message) {
+  if (!ONE_SIGNAL_APP_ID || !ONE_SIGNAL_REST_API_KEY || !playerIds || playerIds.length === 0) return;
+
+  try {
+    await axios.post('https://onesignal.com/api/v1/notifications', {
+      app_id: ONE_SIGNAL_APP_ID,
+      include_player_ids: playerIds,
+      headings: { en: title },
+      contents: { en: message }
+    }, {
+      headers: {
+        'Authorization': `Basic ${ONE_SIGNAL_REST_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+  } catch (err) {
+    console.error('❌ خطأ في إرسال إشعار OneSignal:', err.response?.data || err.message);
+  }
+}
 
 // ==========================================
 // المسار الرئيسي (إعادة توجيه تلقائي لواجهة المستثمر /app)
@@ -131,7 +159,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر الشاملة (Investor UI مع دعم PWA)
+// 1. واجهة المستثمر الشاملة (Investor UI مع زر تفعيل الإشعارات)
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -141,7 +169,6 @@ app.get('/app', (req, res) => {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>مَكْسَب الاستثمارية - Fintech</title>
-      <!-- إعدادات PWA -->
       <link rel="manifest" href="/manifest.json">
       <meta name="theme-color" content="#0f172a">
       <link rel="apple-touch-icon" href="https://img.icons8.com/color/192/000000/gold-bars.png">
@@ -229,7 +256,12 @@ app.get('/app', (req, res) => {
           <div class="top-nav">
             <div>
               <strong style="color:var(--accent-gold);"><span id="user-name"></span></strong>
-              <div style="font-size:11px; color:var(--text-muted);" id="kyc-badge-status">غير موثق</div>
+              <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center; margin-top:3px;">
+                <span id="kyc-badge-status">غير موثق</span>
+                <button onclick="requestPushPermission()" style="background:var(--accent-gold); color:black; border:none; padding:3px 8px; border-radius:6px; font-weight:bold; font-size:10px; cursor:pointer;">
+                  🔔 تفعيل الإشعارات
+                </button>
+              </div>
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
@@ -413,7 +445,6 @@ app.get('/app', (req, res) => {
       </div>
 
       <script>
-        // تفعيل Service Worker لدعم PWA
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.register('/sw.js').catch(function(err) {
             console.log('SW registration failed: ', err);
@@ -425,6 +456,17 @@ app.get('/app', (req, res) => {
         var currentUser = JSON.parse(localStorage.getItem('maksab_user')) || null;
         var rawCapital = 0; var rawProfit = 0;
         var selectedPkg = null;
+
+        // دالة طلب إذن الإشعارات يدويًا
+        function requestPushPermission() {
+          try {
+            OneSignal.Notifications.requestPermission(true).then(function(accepted) {
+              alert("حالة الإشعارات: " + (accepted ? "تم السماح بنجاح ✅" : "تم الرفض ❌"));
+            });
+          } catch(e) {
+            alert("تفعيل الإشعارات متاح داخل تطبيق الموبايل المثبت APK");
+          }
+        }
 
         function formatMoney(amount) {
           var curr = document.getElementById('currency-toggle') ? document.getElementById('currency-toggle').value : 'IQD';
@@ -1478,7 +1520,6 @@ app.get('/admin', (req, res) => {
 // 3. المسارات الخلفية والمحمية (Secured APIs)
 // ==========================================
 
-// 🚀 مسار استقبال رسائل Webhook من تلجرام وتفعيل الحساب تلقائياً عند الضغط على /start
 app.post('/api/telegram-webhook', async (req, res) => {
   try {
     const update = req.body;
@@ -1516,7 +1557,6 @@ app.post('/api/telegram-webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-// دخول الأدمن
 app.post('/api/admin/auth', async (req, res) => {
   try {
     const rawInput = req.body.password ? String(req.body.password).trim() : '';
@@ -1533,7 +1573,6 @@ app.post('/api/admin/auth', async (req, res) => {
   }
 });
 
-// تسجيل حساب جديد
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { phone_number, password, full_name, referred_by } = req.body;
@@ -1559,7 +1598,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// تسجيل الدخول (مع فحص الحظر الفوري)
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { phone_number, password } = req.body;
@@ -1581,7 +1619,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// مسار الاشتراك بالباقة
+// مسار الاشتراك بالباقة مع إرسال إشعار الهاتف
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
@@ -1637,9 +1675,15 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
       message: `تم الاشتراك بـ (${plan_name}) بمبلغ ${amountNeeded.toLocaleString()} د.ع بنجاح.`
     }]);
 
-    const { data: usr } = await supabase.from('users').select('telegram_chat_id').eq('id', req.user.id).single();
-    if (usr && usr.telegram_chat_id) {
-      await sendTelegramNotification(usr.telegram_chat_id, `🚀 <b>تفعيل باقة جديدة!</b>\n\nتم الاشتراك بـ <b>${plan_name}</b> بمبلغ <b>${amountNeeded.toLocaleString()} د.ع</b> بنجاح.`);
+    // جلب معلومات المستخدم وقام بإرسال إشعار هاتف عبر OneSignal وتلجرام
+    const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', req.user.id).single();
+    if (usr) {
+      if (usr.onesignal_player_id) {
+        await sendOneSignalNotification([usr.onesignal_player_id], "🚀 تفعيل باقة جديدة", `تم الاشتراك بـ (${plan_name}) بنجاح.`);
+      }
+      if (usr.telegram_chat_id) {
+        await sendTelegramNotification(usr.telegram_chat_id, `🚀 <b>تفعيل باقة جديدة!</b>\n\nتم الاشتراك بـ <b>${plan_name}</b> بمبلغ <b>${amountNeeded.toLocaleString()} د.ع</b> بنجاح.`);
+      }
     }
 
     res.json({ success: true, message: 'تم الاشتراك بالباقة وتفعيلها بنجاح من رصيدك المتاح!' });
@@ -1648,25 +1692,21 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   }
 });
 
-// جلب إشعارات المستخدم
 app.get('/api/user/notifications', authenticateUser, async (req, res) => {
   const { data } = await supabase.from('notifications').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(10);
   res.json({ success: true, data: data || [] });
 });
 
-// تحديد الإشعارات كمقروءة
 app.post('/api/user/notifications/read', authenticateUser, async (req, res) => {
   await supabase.from('notifications').update({ is_read: true }).eq('user_id', req.user.id);
   res.json({ success: true });
 });
 
-// جلب باقات المستثمر
 app.get('/api/user/packages', authenticateUser, async (req, res) => {
   const { data } = await supabase.from('investment_packages').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false });
   res.json({ success: true, data: data || [] });
 });
 
-// تقديم إيداع حر
 app.post('/api/deposits', authenticateUser, async (req, res) => {
   try {
     const { amount, transaction_ref, receipt_url, wallet_type } = req.body;
@@ -1689,7 +1729,6 @@ app.post('/api/deposits', authenticateUser, async (req, res) => {
   }
 });
 
-// تقديم طلب سحب
 app.post('/api/withdrawals', authenticateUser, async (req, res) => {
   try {
     const { amount, payment_method, account_details, wallet_type } = req.body;
@@ -1710,7 +1749,6 @@ app.post('/api/withdrawals', authenticateUser, async (req, res) => {
   }
 });
 
-// إعادة الاستثمار التلقائية
 app.post('/api/user/reinvest', authenticateUser, async (req, res) => {
   try {
     const { amount } = req.body;
@@ -1722,7 +1760,6 @@ app.post('/api/user/reinvest', authenticateUser, async (req, res) => {
   }
 });
 
-// رفع وثائق التوثيق (KYC)
 app.post('/api/user/kyc', authenticateUser, async (req, res) => {
   try {
     const publicUrl = await uploadToStorage(req.body.kyc_doc);
@@ -1733,7 +1770,6 @@ app.post('/api/user/kyc', authenticateUser, async (req, res) => {
   }
 });
 
-// جلب بيانات الزبون
 app.get('/api/user/deposits', authenticateUser, async (req, res) => {
   const { data } = await supabase.from('deposits').select('*').eq('user_id', req.user.id);
   res.json({ success: true, data: data || [] });
@@ -1744,7 +1780,6 @@ app.get('/api/user/withdrawals', authenticateUser, async (req, res) => {
   res.json({ success: true, data: data || [] });
 });
 
-// مسارات الأدمن
 app.get('/api/admin/deposits', authenticateAdmin, async (req, res) => {
   const { data } = await supabase.from('deposits').select('*').order('created_at', { ascending: false });
   res.json({ success: true, data: data || [] });
@@ -1770,6 +1805,7 @@ app.patch('/api/admin/users/verify-kyc', authenticateAdmin, async (req, res) => 
   res.json({ success: true });
 });
 
+// الموافقة على السحب مع إرسال إشعار OneSignal
 app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) => {
   const { id, status } = req.body;
   await supabase.from('withdrawals').update({ status }).eq('id', id);
@@ -1777,9 +1813,14 @@ app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) =
   if (status === 'approved') {
     const { data: withItem } = await supabase.from('withdrawals').select('*').eq('id', id).single();
     if (withItem) {
-      const { data: usr } = await supabase.from('users').select('telegram_chat_id').eq('id', withItem.user_id).single();
-      if (usr && usr.telegram_chat_id) {
-        await sendTelegramNotification(usr.telegram_chat_id, `💸 <b>موافقة على طلب السحب!</b>\n\nتمت الموافقة على طلب سحب مبلغ <b>${Number(withItem.amount).toLocaleString()} د.ع</b> وتحويله لحسابك.`);
+      const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', withItem.user_id).single();
+      if (usr) {
+        if (usr.onesignal_player_id) {
+          await sendOneSignalNotification([usr.onesignal_player_id], "💸 موافقة على السحب", `تمت الموافقة على سحب مبلغ ${Number(withItem.amount).toLocaleString()} د.ع.`);
+        }
+        if (usr.telegram_chat_id) {
+          await sendTelegramNotification(usr.telegram_chat_id, `💸 <b>موافقة على طلب السحب!</b>\n\nتمت الموافقة على طلب سحب مبلغ <b>${Number(withItem.amount).toLocaleString()} د.ع</b> وتحويله لحسابك.`);
+        }
       }
     }
   }
@@ -1787,7 +1828,7 @@ app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) =
   res.json({ success: true });
 });
 
-// تعديل حالة الإيداع الحر + إرسال التنبيهات
+// تعديل حالة الإيداع الحر وإرسال تنبيهات OneSignal
 app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
   try {
     const { id, status } = req.body;
@@ -1803,16 +1844,21 @@ app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
           message: `تم قبول إيداعك بمبلغ ${Number(dep.amount).toLocaleString()} د.ع بنجاح.`
         }]);
 
-        const { data: usr } = await supabase.from('users').select('telegram_chat_id').eq('id', dep.user_id).single();
-        if (usr && usr.telegram_chat_id) {
-          await sendTelegramNotification(usr.telegram_chat_id, `✅ <b>تم قبول الإيداع!</b>\n\nتم تأكيد وإضافة مبلغ <b>${Number(dep.amount).toLocaleString()} د.ع</b> لرصيد رأس مالك النشط.`);
+        const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', dep.user_id).single();
+        if (usr) {
+          if (usr.onesignal_player_id) {
+            await sendOneSignalNotification([usr.onesignal_player_id], "✅ تأكيد الإيداع", `تم قبول إيداعك بمبلغ ${Number(dep.amount).toLocaleString()} د.ع بنجاح.`);
+          }
+          if (usr.telegram_chat_id) {
+            await sendTelegramNotification(usr.telegram_chat_id, `✅ <b>تم قبول الإيداع!</b>\n\nتم تأكيد وإضافة مبلغ <b>${Number(dep.amount).toLocaleString()} د.ع</b> لرصيد رأس مالك النشط.`);
+          }
         }
 
         const { data: userDeps } = await supabase.from('deposits').select('id').eq('user_id', dep.user_id).eq('status', 'approved').eq('wallet_type', 'capital');
         if (userDeps && userDeps.length === 1) {
           const { data: usrData } = await supabase.from('users').select('referred_by').eq('id', dep.user_id).single();
           if (usrData && usrData.referred_by) {
-            const { data: refUser } = await supabase.from('users').select('phone_number, telegram_chat_id').eq('id', usrData.referred_by).single();
+            const { data: refUser } = await supabase.from('users').select('phone_number, telegram_chat_id, onesignal_player_id').eq('id', usrData.referred_by).single();
             const commission = Number(dep.amount) * 0.02;
             if (refUser && commission > 0) {
               await supabase.from('deposits').insert([{
@@ -1825,6 +1871,9 @@ app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
                 message: `تم إضافة عمولة بمبلغ ${commission.toLocaleString()} د.ع لحسابك نتيجة تسجيل مستثمر جديد عبر رابطك.`
               }]);
 
+              if (refUser.onesignal_player_id) {
+                await sendOneSignalNotification([refUser.onesignal_player_id], "🎁 مكافأة إحالة جديدة (2%)", `تم إضافة عمولة 2% بقيمة ${commission.toLocaleString()} د.ع لرصيد أرباحك.`);
+              }
               if (refUser.telegram_chat_id) {
                 await sendTelegramNotification(refUser.telegram_chat_id, `🎁 <b>مكافأة إحالة جديدة!</b>\n\nتم إضافة عمولة 2% بقيمة <b>${commission.toLocaleString()} د.ع</b> لرصيد أرباحك نتيجة إيداع مستثمر جديد عبر رابطك.`);
               }
@@ -1839,7 +1888,6 @@ app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
   }
 });
 
-// توزيع الأرباح الشهري العام
 app.post('/api/admin/distribute-profits', authenticateAdmin, async (req, res) => {
   try {
     const { monthYear, netProfit, investorRate } = req.body;
@@ -1854,7 +1902,7 @@ app.post('/api/admin/distribute-profits', authenticateAdmin, async (req, res) =>
 
     if (totalGlobalCapital <= 0) throw new Error('لا يوجد رأس مال نشط للتوزيع عليه.');
 
-    const { data: users } = await supabase.from('users').select('id, phone_number, telegram_chat_id');
+    const { data: users } = await supabase.from('users').select('id, phone_number, telegram_chat_id, onesignal_player_id');
     const profitInserts = [];
     const notifInserts = [];
 
@@ -1872,6 +1920,9 @@ app.post('/api/admin/distribute-profits', authenticateAdmin, async (req, res) =>
             message: `تم إيداع حصتك من أرباح شهر (${monthYear}) بمبلغ ${profitAmt.toLocaleString()} د.ع بنجاح.`
           });
 
+          if (uInfo.onesignal_player_id) {
+            await sendOneSignalNotification([uInfo.onesignal_player_id], "📈 توزيع الأرباح الشهري", `تم إضافة حصتك من الأرباح لشهر ${monthYear} بقيمة ${profitAmt.toLocaleString()} د.ع.`);
+          }
           if (uInfo.telegram_chat_id) {
             await sendTelegramNotification(uInfo.telegram_chat_id, `📈 <b>توزيع الأرباح الشهري!</b>\n\nتم إضافة حصتك من الأرباح لشهر <b>${monthYear}</b> بقيمة <b>${profitAmt.toLocaleString()} د.ع</b> لحساب أرباحك.`);
           }
@@ -1891,7 +1942,6 @@ app.post('/api/admin/distribute-profits', authenticateAdmin, async (req, res) =>
   }
 });
 
-// تنفيذ صرف أرباح الباقات المكتملة تلقائياً
 app.post('/api/admin/packages/payout', authenticateAdmin, async (req, res) => {
   try {
     const now = new Date().toISOString();
@@ -1921,12 +1971,17 @@ app.post('/api/admin/packages/payout', authenticateAdmin, async (req, res) => {
         message: `تم اكتمال مدة (${pkg.plan_name}) بنجاح، وتحويل العائد قدره ${Number(pkg.expected_payout).toLocaleString()} د.ع إلى محفظة أرباحك!`
       }]);
 
-      const { data: usr } = await supabase.from('users').select('telegram_chat_id').eq('id', pkg.user_id).single();
-      if (usr && usr.telegram_chat_id) {
-        await sendTelegramNotification(
-          usr.telegram_chat_id,
-          `🎉 <b>اكتمال الباقة الاستثمارية!</b>\n\nنود إعلامك باكتمل مدة <b>${pkg.plan_name}</b> وصرف عائد قدره <b>${Number(pkg.expected_payout).toLocaleString()} د.ع</b> إلى محفظة أرباحك.`
-        );
+      const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', pkg.user_id).single();
+      if (usr) {
+        if (usr.onesignal_player_id) {
+          await sendOneSignalNotification([usr.onesignal_player_id], "🎉 اكتمال الباقة وصرف العائد", `تم اكتمال مدة (${pkg.plan_name}) وصرف العائد بقيمة ${Number(pkg.expected_payout).toLocaleString()} د.ع.`);
+        }
+        if (usr.telegram_chat_id) {
+          await sendTelegramNotification(
+            usr.telegram_chat_id,
+            `🎉 <b>اكتمال الباقة الاستثمارية!</b>\n\nنود إعلامك باكتمل مدة <b>${pkg.plan_name}</b> وصرف عائد قدره <b>${Number(pkg.expected_payout).toLocaleString()} د.ع</b> إلى محفظة أرباحك.`
+          );
+        }
       }
 
       count++;
@@ -1938,7 +1993,6 @@ app.post('/api/admin/packages/payout', authenticateAdmin, async (req, res) => {
   }
 });
 
-// 📢 مسار إرسال إعلان عام أو تحديث لجميع المستثمرين (Broadcast API)
 app.post('/api/admin/broadcast', authenticateAdmin, async (req, res) => {
   try {
     const { title, message } = req.body;
@@ -1947,10 +2001,11 @@ app.post('/api/admin/broadcast', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ success: false, error: 'العنوان والنص مطلوبان' });
     }
 
-    const { data: users, error } = await supabase.from('users').select('id, telegram_chat_id');
+    const { data: users, error } = await supabase.from('users').select('id, telegram_chat_id, onesignal_player_id');
     if (error) throw error;
 
     let telegramSentCount = 0;
+    let pushSentCount = 0;
     const notifInserts = [];
 
     for (const u of (users || [])) {
@@ -1959,6 +2014,11 @@ app.post('/api/admin/broadcast', authenticateAdmin, async (req, res) => {
         title: title,
         message: message
       });
+
+      if (u.onesignal_player_id) {
+        await sendOneSignalNotification([u.onesignal_player_id], title, message);
+        pushSentCount++;
+      }
 
       if (u.telegram_chat_id) {
         await sendTelegramNotification(
@@ -1975,7 +2035,7 @@ app.post('/api/admin/broadcast', authenticateAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      message: `تم إرسال الإعلان لـ (${users.length}) مستثمر بالموقع، و (${telegramSentCount}) مستثمر عبر تلجرام بنجاح! 🚀`
+      message: `تم إرسال الإعلان لـ (${users.length}) مستثمر بالموقع، (${pushSentCount}) عبر الموبايل، و (${telegramSentCount}) عبر تلجرام بنجاح! 🚀`
     });
 
   } catch (err) {
@@ -1983,7 +2043,6 @@ app.post('/api/admin/broadcast', authenticateAdmin, async (req, res) => {
   }
 });
 
-// 🛑 مسار حظر أو إلغاء حظر حساب مستثمر
 app.patch('/api/admin/users/toggle-block', authenticateAdmin, async (req, res) => {
   try {
     const { userId, isBlocked } = req.body;
@@ -2013,7 +2072,6 @@ app.patch('/api/admin/users/toggle-block', authenticateAdmin, async (req, res) =
   }
 });
 
-// ⚙️ مسار تعديل رصيد المستثمر يدويًا (إضافة أو خصم)
 app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) => {
   try {
     const { userId, actionType, walletType, amount, reason } = req.body;
@@ -2023,7 +2081,7 @@ app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) 
       return res.status(400).json({ success: false, error: 'جميع البيانات مطلوبة وبقيمة صحيحة' });
     }
 
-    const { data: user } = await supabase.from('users').select('phone_number, telegram_chat_id, full_name').eq('id', userId).single();
+    const { data: user } = await supabase.from('users').select('phone_number, telegram_chat_id, onesignal_player_id, full_name').eq('id', userId).single();
     if (!user) return res.status(404).json({ success: false, error: 'المستخدم غير موجود' });
 
     const note = reason ? `تسوية إدارية: ${reason}` : 'تسوية إدارية مباشرة';
@@ -2059,6 +2117,9 @@ app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) 
       message: `تم ${actionText} مبلغ ${numAmount.toLocaleString()} د.ع في ${walletName}. (${note})`
     }]);
 
+    if (user.onesignal_player_id) {
+      await sendOneSignalNotification([user.onesignal_player_id], `⚙️ تعديل رصيد (${actionText})`, `تم ${actionText} مبلغ ${numAmount.toLocaleString()} د.ع في ${walletName}.`);
+    }
     if (user.telegram_chat_id) {
       await sendTelegramNotification(
         user.telegram_chat_id,
@@ -2076,7 +2137,6 @@ app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) 
   }
 });
 
-// 🗑️ مسار حذف حساب مستثمر بالكامل وكافة بياناته المرتبطة
 app.delete('/api/admin/users/:userId', authenticateAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -2101,4 +2161,4 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🔒 السيرفر المحصن يعمل بنجاح على: http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`🔒 السيرفر المحصن يعمل بنجاح على: https://maksab-production-6736.up.railway.app`));
