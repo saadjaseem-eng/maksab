@@ -20,6 +20,13 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_BOT_NAME = process.env.TELEGRAM_BOT_NAME || 'MaksabBot';
 
 // ==========================================
+// المسار الرئيسي (إعادة توجيه تلقائي لواجهة المستثمر /app)
+// ==========================================
+app.get('/', (req, res) => {
+  res.redirect('/app');
+});
+
+// ==========================================
 // مسارات PWA (تطبيق الويب التقدمي)
 // ==========================================
 app.get('/manifest.json', (req, res) => {
