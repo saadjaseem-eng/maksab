@@ -23,7 +23,7 @@ const TELEGRAM_BOT_NAME = process.env.TELEGRAM_BOT_NAME || 'MaksabBot';
 const ONE_SIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
-// ذاكرة مؤقتة لحالة الباقات (مفعلة أو متوقفة مؤقتاً) لضمان السرعة المطلقة والاستجابة الفورية
+// ذاكرة مؤقتة لحالة الباقات (مفعلة أو متوقفة مؤقتاً)
 let packageStatusMemory = {
   'الباقة الفضية الشهرية': true,
   'الباقة الذهبية الشهرية': true,
@@ -214,7 +214,7 @@ app.get('/app', (req, res) => {
         .pkg-toggle-btn.active { background: var(--accent-gold); color: black; border-color: var(--accent-gold); }
 
         .package-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 20px; }
-        .package-card { background: #0f172a; border: 1px solid var(--accent-gold); border-radius: 15px; padding: 20px; text-align: center; }
+        .package-card { background: #0f172a; border: 1px solid var(--accent-gold); border-radius: 15px; padding: 20px; text-align: center; position: relative; overflow: hidden; }
         .package-title { font-weight: bold; color: var(--accent-gold); font-size: 16px; margin-bottom: 10px; }
         .package-price { font-size: 22px; font-weight: bold; margin: 10px 0; }
         .package-return { color: var(--success-green); font-size: 14px; font-weight: bold; margin-bottom: 15px; }
@@ -337,18 +337,21 @@ app.get('/app', (req, res) => {
               <!-- الباقات الشهرية -->
               <div class="package-grid" id="grid-monthly">
                 <div class="package-card" id="card-الباقة الفضية الشهرية">
+                  <div id="badge-alert-الباقة الفضية الشهرية"></div>
                   <div class="package-title">🥉 الباقة الفضية الشهرية</div>
                   <div class="package-price">100,000 د.ع</div>
                   <div class="package-return">العائد بعد شهر: 120,000 د.ع</div>
                   <button class="btn-gold" id="btn-sub-الباقة الفضية الشهرية" onclick="openPackageModal('الباقة الفضية الشهرية', 100000, 120000, 1)">اشترك الآن 🚀</button>
                 </div>
                 <div class="package-card" id="card-الباقة الذهبية الشهرية" style="border-color: #d4af37; background: rgba(212, 175, 55, 0.05);">
+                  <div id="badge-alert-الباقة الذهبية الشهرية"></div>
                   <div class="package-title">🥇 الباقة الذهبية الشهرية</div>
                   <div class="package-price">250,000 د.ع</div>
                   <div class="package-return">العائد بعد شهر: 300,000 د.ع</div>
                   <button class="btn-gold" id="btn-sub-الباقة الذهبية الشهرية" onclick="openPackageModal('الباقة الذهبية الشهرية', 250000, 300000, 1)">اشترك الآن 🚀</button>
                 </div>
                 <div class="package-card" id="card-الباقة الماسية الشهرية" style="border-color: #3b82f6;">
+                  <div id="badge-alert-الباقة الماسية الشهرية"></div>
                   <div class="package-title">💎 الباقة الماسية الشهرية</div>
                   <div class="package-price">500,000 د.ع</div>
                   <div class="package-return">العائد بعد شهر: 600,000 د.ع</div>
@@ -359,18 +362,21 @@ app.get('/app', (req, res) => {
               <!-- الباقات السنوية -->
               <div class="package-grid" id="grid-annual" style="display:none;">
                 <div class="package-card" id="card-الباقة السنوية الفضية">
+                  <div id="badge-alert-الباقة السنوية الفضية"></div>
                   <div class="package-title">👑 الباقة السنوية الفضية</div>
                   <div class="package-price">1,000,000 د.ع</div>
                   <div class="package-return">العائد بعد سنة: 1,600,000 د.ع</div>
                   <button class="btn-gold" id="btn-sub-الباقة السنوية الفضية" onclick="openPackageModal('الباقة السنوية الفضية', 1000000, 1600000, 12)">اشترك الآن 🚀</button>
                 </div>
                 <div class="package-card" id="card-الباقة السنوية الذهبية" style="border-color: #d4af37; background: rgba(212, 175, 55, 0.05);">
+                  <div id="badge-alert-الباقة السنوية الذهبية"></div>
                   <div class="package-title">🌟 الباقة السنوية الذهبية</div>
                   <div class="package-price">2,500,000 د.ع</div>
                   <div class="package-return">العائد بعد سنة: 4,200,000 د.ع</div>
                   <button class="btn-gold" id="btn-sub-الباقة السنوية الذهبية" onclick="openPackageModal('الباقة السنوية الذهبية', 2500000, 4200000, 12)">اشترك الآن 🚀</button>
                 </div>
                 <div class="package-card" id="card-الباقة السنوية الماسية VIP" style="border-color: #10b981;">
+                  <div id="badge-alert-الباقة السنوية الماسية VIP"></div>
                   <div class="package-title">🔥 الباقة السنوية الماسية VIP</div>
                   <div class="package-price">5,000,000 د.ع</div>
                   <div class="package-return">العائد بعد سنة: 9,000,000 د.ع</div>
@@ -543,14 +549,20 @@ app.get('/app', (req, res) => {
                 var isPaused = settings[name] === false;
                 var btn = document.getElementById('btn-sub-' + name);
                 var card = document.getElementById('card-' + name);
-                if (btn && card) {
+                var badgeAlert = document.getElementById('badge-alert-' + name);
+
+                if (btn && card && badgeAlert) {
                   if (isPaused) {
                     btn.disabled = true;
                     btn.innerText = '🚫 متوقفة مؤقتاً';
                     btn.style.background = '#475569';
                     btn.style.color = '#94a3b8';
                     btn.style.cursor = 'not-allowed';
-                    card.style.opacity = '0.6';
+                    card.style.opacity = '0.65';
+                    card.style.borderColor = '#ef4444';
+
+                    // إظهار شارة التنبيه في أعلى الباقة
+                    badgeAlert.innerHTML = '<div style="background:rgba(239, 68, 68, 0.15); border:1px solid #ef4444; color:#ef4444; padding:6px 10px; border-radius:8px; font-size:11px; font-weight:bold; margin-bottom:12px; text-align:center;"><i class="fa-solid fa-triangle-exclamation"></i> عذراً، الباقة متوقفة مؤقتاً من الإدارة</div>';
                   } else {
                     btn.disabled = false;
                     btn.innerText = 'اشترك الآن 🚀';
@@ -558,6 +570,10 @@ app.get('/app', (req, res) => {
                     btn.style.color = '';
                     btn.style.cursor = 'pointer';
                     card.style.opacity = '1';
+                    card.style.borderColor = '';
+
+                    // إخفاء شارة التنبيه
+                    badgeAlert.innerHTML = '';
                   }
                 }
               });
@@ -1564,17 +1580,15 @@ app.get('/admin', (req, res) => {
 // 3. المسارات الخلفية والمحمية (Secured APIs)
 // ==========================================
 
-// مسار جلب إعدادات حالة الباقات
 app.get('/api/packages/settings', (req, res) => {
   res.json({ success: true, data: packageStatusMemory });
 });
 
-// مسار إداري لتغيير حالة الباقة (تفعيل / إيقاف مؤقت)
 app.post('/api/admin/packages/toggle', authenticateAdmin, (req, res) => {
   try {
     const { package_name, is_paused } = req.body;
     if (package_name) {
-      packageStatusMemory[package_name] = !is_paused; // true إذا مفعلة، false إذا متوقفة
+      packageStatusMemory[package_name] = !is_paused;
     }
     res.json({ success: true, message: 'تم تحديث حالة الباقة بنجاح!' });
   } catch (err) {
@@ -1685,7 +1699,6 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
 
-    // التحقق مما إذا كانت الباقة متوقفة مؤقتاً
     if (packageStatusMemory[plan_name] === false) {
       return res.status(400).json({ success: false, error: 'عذراً، هذه الباقة متوقفة مؤقتاً من قبل الإدارة حالياً.' });
     }
