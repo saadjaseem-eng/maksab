@@ -177,7 +177,8 @@ app.get('/app', (req, res) => {
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
         
-        .notif-dropdown { position: fixed; top: 75px; left: 10px; right: 10px; width: auto; max-width: 400px; margin: 0 auto; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.95); z-index: 99999; display: none; }
+        /* تعديل متمركز وآمن تماماً لشاشات الهواتف يمنع الخروج عن الحواف */
+        .notif-dropdown { position: absolute; top: 55px; right: 0px; left: auto; width: 300px; max-width: 85vw; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.9); z-index: 9999; display: none; }
         
         .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
         .notif-item.read { border-right-color: #334155; opacity: 0.7; }
@@ -225,11 +226,6 @@ app.get('/app', (req, res) => {
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
-              <select class="currency-toggle" id="currency-toggle" onchange="loadUserData()">
-                <option value="IQD">IQD د.ع</option>
-                <option value="USD">USD $</option>
-              </select>
-
               <div class="notif-bell-container" onclick="toggleNotifs()">
                 <div class="notif-bell-icon"><i class="fa-solid fa-bell"></i></div>
                 <span class="notif-count-badge" id="notif-badge" style="display:none;">0</span>
@@ -243,6 +239,10 @@ app.get('/app', (req, res) => {
                 </div>
               </div>
 
+              <select class="currency-toggle" id="currency-toggle" onchange="loadUserData()">
+                <option value="IQD">IQD د.ع</option>
+                <option value="USD">USD $</option>
+              </select>
               <button onclick="logout()" style="background:transparent; color:var(--danger-red); border:none; cursor:pointer;"><i class="fa-solid fa-power-off"></i> خروج</button>
             </div>
           </div>
@@ -675,41 +675,11 @@ app.get('/app', (req, res) => {
           var ref = document.getElementById('deposit-ref').value;
           var fileInput = document.getElementById('deposit-file');
           var msg = document.getElementById('deposit-msg');
-          
-          if (!amount || !ref || fileInput.files.length === 0) { 
-            msg.innerText = 'يرجى ملء الحقول وإرفاق الإيصال'; 
-            msg.style.color = 'var(--danger-red)';
-            return; 
-          }
+          if (!amount || !ref || fileInput.files.length === 0) { msg.innerText = 'املأ الحقول وارفع الإيصال'; return; }
 
-          msg.innerText = 'جاري إرسال طلب الإيداع...';
-          msg.style.color = 'var(--accent-gold)';
-
-          try {
-            var b64 = await convertFileToBase64(fileInput.files[0]);
-            var data = await fetchWithAuth('/api/deposits', { 
-              method: 'POST', 
-              headers: {'Content-Type':'application/json'}, 
-              body: JSON.stringify({ 
-                amount: amount, 
-                transaction_ref: ref, 
-                receipt_url: b64, 
-                wallet_type: 'capital' 
-              }) 
-            });
-            
-            if (data.success) { 
-              msg.innerText = '✅ تم إرسال طلب الإيداع بنجاح'; 
-              msg.style.color = 'var(--success-green)';
-              loadUserData(); 
-            } else {
-              msg.innerText = '❌ ' + (data.error || 'فشل إرسال الطلب');
-              msg.style.color = 'var(--danger-red)';
-            }
-          } catch(e) {
-            msg.innerText = '❌ خطأ في الاتصال بالخادم';
-            msg.style.color = 'var(--danger-red)';
-          }
+          var b64 = await convertFileToBase64(fileInput.files[0]);
+          var data = await fetchWithAuth('/api/deposits', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ amount: amount, transaction_ref: ref, receipt_url: b64, wallet_type: 'capital' }) });
+          if (data.success) { msg.innerText = '✅ تم إرسال الإيداع'; loadUserData(); }
         }
 
         async function submitWithdraw() {
@@ -762,7 +732,7 @@ app.get('/admin', (req, res) => {
         * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
         body { background: var(--admin-bg); color: var(--text-main); margin: 0; padding: 25px; min-height: 100vh; }
         .admin-box { background: var(--card-bg); max-width: 400px; margin: 80px auto; padding: 35px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }
-        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; text-align: center; outline: none; }
+        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; text-align: center; }
         button { width: 100%; background: var(--accent-gold); color: black; padding: 12px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
         .card-panel { background: var(--card-bg); border-radius: 18px; padding: 25px; margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.08); }
         table { width: 100%; border-collapse: collapse; text-align: right; font-size: 13px; }
@@ -805,80 +775,32 @@ app.get('/admin', (req, res) => {
 
       <script>
         var adminToken = localStorage.getItem('maksab_admin_token') || null;
-
         async function loginAdmin() {
           var pass = document.getElementById('admin-pass').value;
-          var msg = document.getElementById('admin-msg');
-          msg.innerText = 'جاري التحقق...';
-
-          try {
-            var res = await fetch('/api/admin/auth', { 
-              method: 'POST', 
-              headers: {'Content-Type':'application/json'}, 
-              body: JSON.stringify({ password: pass }) 
-            });
-            var data = await res.json();
-            if (data.success) { 
-              adminToken = data.token; 
-              localStorage.setItem('maksab_admin_token', adminToken); 
-              showAdmin(); 
-            } else { 
-              msg.innerText = data.error || 'كلمة المرور خاطئة'; 
-            }
-          } catch(e) {
-            msg.innerText = 'خطأ في الاتصال بالخادم';
-          }
+          var res = await fetch('/api/admin/auth', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: pass }) });
+          var data = await res.json();
+          if (data.success) { adminToken = data.token; localStorage.setItem('maksab_admin_token', adminToken); showAdmin(); }
+          else { document.getElementById('admin-msg').innerText = 'كلمة المرور خاطئة'; }
         }
-
-        function showAdmin() { 
-          document.getElementById('admin-auth').style.display = 'none'; 
-          document.getElementById('admin-dash').style.display = 'block'; 
-          loadAdminData(); 
-        }
-
-        function logoutAdmin() { 
-          localStorage.removeItem('maksab_admin_token'); 
-          location.reload(); 
-        }
+        function showAdmin() { document.getElementById('admin-auth').style.display = 'none'; document.getElementById('admin-dash').style.display = 'block'; loadAdminData(); }
+        function logoutAdmin() { localStorage.removeItem('maksab_admin_token'); location.reload(); }
 
         async function loadAdminData() {
           var h = { 'Authorization': 'Bearer ' + adminToken };
-          try {
-            var d = await (await fetch('/api/admin/deposits', { headers: h })).json();
-            var w = await (await fetch('/api/admin/withdrawals', { headers: h })).json();
-            var p = await (await fetch('/api/admin/packages', { headers: h })).json();
+          var d = await (await fetch('/api/admin/deposits', { headers: h })).json();
+          var w = await (await fetch('/api/admin/withdrawals', { headers: h })).json();
+          var p = await (await fetch('/api/admin/packages', { headers: h })).json();
 
-            document.getElementById('dep-table').innerHTML = (d.data || []).map(function(x) { 
-              return '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td><a href="' + x.receipt_url + '" target="_blank">معاينة</a></td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveDep(\\'' + x.id + '\\')">قبول</button>' : '-') + '</td></tr>'; 
-            }).join('');
-
-            document.getElementById('with-table').innerHTML = (w.data || []).map(function(x) { 
-              return '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td>' + x.account_details + '</td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveWith(\\'' + x.id + '\\')">موافقة</button>' : '-') + '</td></tr>'; 
-            }).join('');
-
-            document.getElementById('pkg-table').innerHTML = (p.data || []).map(function(x) { 
-              return '<tr><td>' + x.phone_number + '</td><td>' + x.plan_name + '</td><td>' + x.invested_amount + '</td><td>' + x.expected_payout + '</td><td>' + new Date(x.end_date).toLocaleDateString() + '</td><td>' + x.status + '</td></tr>'; 
-            }).join('');
-          } catch(e) {
-            console.error('خطأ في تحميل البيانات');
-          }
+          document.getElementById('dep-table').innerHTML = (d.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td><a href="' + x.receipt_url + '" target="_blank">معاينة</a></td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveDep(\'' + x.id + '\')">قبول</button>' : '-') + '</td></tr>').join('');
+          document.getElementById('with-table').innerHTML = (w.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td>' + x.account_details + '</td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveWith(\'' + x.id + '\')">موافقة</button>' : '-') + '</td></tr>').join('');
+          document.getElementById('pkg-table').innerHTML = (p.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.plan_name + '</td><td>' + x.invested_amount + '</td><td>' + x.expected_payout + '</td><td>' + new Date(x.end_date).toLocaleDateString() + '</td><td>' + x.status + '</td></tr>').join('');
         }
 
-        async function approveDep(id) { 
-          await fetch('/api/admin/deposits/status', { method: 'PATCH', headers: {'Content-Type':'application/json','Authorization':'Bearer '+adminToken}, body: JSON.stringify({ id: id, status: 'approved' }) }); 
-          loadAdminData(); 
-        }
-
-        async function approveWith(id) { 
-          await fetch('/api/admin/withdrawals/status', { method: 'PATCH', headers: {'Content-Type':'application/json','Authorization':'Bearer '+adminToken}, body: JSON.stringify({ id: id, status: 'approved' }) }); 
-          loadAdminData(); 
-        }
-
+        async function approveDep(id) { await fetch('/api/admin/deposits/status', { method: 'PATCH', headers: {'Content-Type':'application/json','Authorization':'Bearer '+adminToken}, body: JSON.stringify({ id, status: 'approved' }) }); loadAdminData(); }
+        async function approveWith(id) { await fetch('/api/admin/withdrawals/status', { method: 'PATCH', headers: {'Content-Type':'application/json','Authorization':'Bearer '+adminToken}, body: JSON.stringify({ id, status: 'approved' }) }); loadAdminData(); }
         async function triggerPackagePayouts() {
           var res = await fetch('/api/admin/packages/payout', { method: 'POST', headers: {'Authorization':'Bearer '+adminToken} });
-          var data = await res.json(); 
-          alert(data.message || data.error); 
-          loadAdminData();
+          var data = await res.json(); alert(data.message || data.error); loadAdminData();
         }
 
         if (adminToken) showAdmin();
