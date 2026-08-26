@@ -150,7 +150,7 @@ const authenticateUser = (req, res, next) => {
 
 const authenticateAdmin = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ success: false, error: 'غير مصرح للوحة الإدارة' });
+  if (!token) return res.status(401).json({ success: false, error: 'غير مصرح لوحة الإدارة' });
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err || !decoded.isAdmin) return res.status(403).json({ success: false, error: 'صلاحيات غير كافية' });
@@ -781,7 +781,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة (Executive Admin UI)
+// 2. لوحة الإدارة الشاملة (Executive Admin UI - التصميم الأصلي مع أزرار منسقة)
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -813,7 +813,7 @@ app.get('/admin', (req, res) => {
         .admin-box input { width: 100%; padding: 14px 18px; margin: 15px 0 20px 0; border-radius: 12px; border: 1px solid var(--border-color); background: #0f172a; color: white; outline: none; text-align: center; font-size: 16px; }
         .admin-box button { width: 100%; background: linear-gradient(135deg, #d4af37 0%, #aa7c11 100%); color: #000; padding: 14px; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 16px; }
 
-        .header { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 20px 30px; border-radius: 18px; border: 1px solid var(--border-color); margin-bottom: 25px; box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
+        .header { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 20px 30px; border-radius: 18px; border: 1px solid var(--border-color); margin-bottom: 25px; box-shadow: 0 8px 20px rgba(0,0,0,0.3); flex-wrap: wrap; gap: 15px; }
         .header h2 { margin: 0; font-size: 20px; color: var(--accent-gold); display: flex; align-items: center; gap: 12px; }
 
         .btn-action { background: #0f172a; border: 1px solid var(--border-color); color: var(--text-main); padding: 10px 18px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
@@ -877,7 +877,7 @@ app.get('/admin', (req, res) => {
         
         <div class="header">
           <h2><i class="fa-solid fa-shield-halved"></i> مركز التحكم والمدفوعات - مَكْسَب</h2>
-          <div style="display:flex; gap:10px;">
+          <div style="display:flex; gap:10px; align-items:center;">
             <button class="btn-action" id="btn-refresh-data"><i class="fa-solid fa-arrows-rotate"></i> تحديث البيانات</button>
             <button class="btn-action btn-danger" id="btn-admin-logout"><i class="fa-solid fa-power-off"></i> خروج</button>
           </div>
@@ -1603,7 +1603,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// مسار الاشتراك بالباقة مع إرسال إشعار الهاتف
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
@@ -1659,7 +1658,6 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
       message: `تم الاشتراك بـ (${plan_name}) بمبلغ ${amountNeeded.toLocaleString()} د.ع بنجاح.`
     }]);
 
-    // جلب معلومات المستخدم وقام بإرسال إشعار هاتف عبر OneSignal وتلجرام
     const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', req.user.id).single();
     if (usr) {
       if (usr.onesignal_player_id) {
@@ -1789,7 +1787,6 @@ app.patch('/api/admin/users/verify-kyc', authenticateAdmin, async (req, res) => 
   res.json({ success: true });
 });
 
-// الموافقة على السحب مع إرسال إشعار OneSignal
 app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) => {
   const { id, status } = req.body;
   await supabase.from('withdrawals').update({ status }).eq('id', id);
@@ -1812,7 +1809,6 @@ app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) =
   res.json({ success: true });
 });
 
-// تعديل حالة الإيداع الحر وإرسال تنبيهات OneSignal
 app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
   try {
     const { id, status } = req.body;
