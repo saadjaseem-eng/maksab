@@ -159,7 +159,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر الشاملة (Investor UI مع دعم PWA)
+// 1. واجهة المستثمر الشاملة (Investor UI مخصصة للباقات)
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -282,15 +282,15 @@ app.get('/app', (req, res) => {
           </div>
 
           <div class="vip-card">
-            <div class="card-balance-title">إجمالي الرصيد المتاح</div>
+            <div class="card-balance-title">إجمالي الرصيد المتاح لشراء الباقات</div>
             <div class="card-balance" id="net-balance">0</div>
             <div class="wallet-split">
               <div class="wallet-item">
-                <p>رأس المال النشط <i class="fa-solid fa-vault"></i></p>
+                <p>رأس المال / الإيداعات <i class="fa-solid fa-vault"></i></p>
                 <h4 id="active-capital" style="color:var(--success-green); margin:0;">0</h4>
               </div>
               <div class="wallet-item">
-                <p>أرباح الاستثمار <i class="fa-solid fa-coins"></i></p>
+                <p>أرباح الباقات المكتملة <i class="fa-solid fa-coins"></i></p>
                 <h4 id="available-profit" style="color:var(--accent-gold); margin:0;">0</h4>
               </div>
             </div>
@@ -379,30 +379,25 @@ app.get('/app', (req, res) => {
           <div id="tab-finance" class="tab-content">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
               <div class="section-card">
-                <h3>إيداع استثمار حر</h3>
-                <input type="number" id="deposit-amount" placeholder="المبلغ" style="margin-bottom:10px;">
+                <h3>شحن رصيد لشراء الباقات</h3>
+                <input type="number" id="deposit-amount" placeholder="المبلغ بالدينار" style="margin-bottom:10px;">
                 <input type="text" id="deposit-ref" placeholder="رقم التحويل (Ref ID)" style="margin-bottom:10px;">
                 <input type="file" id="deposit-file" accept="image/*" style="margin-bottom:10px;">
-                <button class="btn-gold" onclick="submitDeposit()" id="btn-dep">تأكيد الإيداع</button>
+                <button class="btn-gold" onclick="submitDeposit()" id="btn-dep">تأكيد شحن الرصيد</button>
                 <p id="deposit-msg" style="font-size:12px; font-weight:bold;"></p>
               </div>
 
               <div class="section-card">
-                <h3>سحب مالي</h3>
-                <input type="number" id="withdraw-amount" placeholder="المبلغ" style="margin-bottom:10px;">
+                <h3>سحب الأرباح والأرصدة</h3>
+                <input type="number" id="withdraw-amount" placeholder="المبلغ المراد سحبه" style="margin-bottom:10px;">
                 <select id="withdraw-wallet" style="margin-bottom:10px;">
-                  <option value="profit">من الأرباح فقط</option>
-                  <option value="capital">من رأس المال</option>
+                  <option value="profit">من محفظة الأرباح (متاح دائماً)</option>
+                  <option value="capital">من رأس المال المتاح (غير المستثمر)</option>
                 </select>
-                <input type="text" id="withdraw-account" placeholder="رقم المحفظة للمستلم" style="margin-bottom:10px;">
-                <button class="btn-gold" style="background:var(--danger-red); color:white;" onclick="submitWithdraw()">تأكيد السحب</button>
+                <input type="text" id="withdraw-account" placeholder="رقم محفظة المستلم (ZainCash / محفظة)" style="margin-bottom:10px;">
+                <button class="btn-gold" style="background:var(--danger-red); color:white;" onclick="submitWithdraw()">طلب السحب المالي</button>
                 <p id="withdraw-msg" style="font-size:12px; font-weight:bold;"></p>
               </div>
-            </div>
-
-            <div class="section-card" style="text-align:center;">
-              <h3>إعادة استثمار الأرباح 🔄</h3>
-              <button onclick="reinvestProfit()" style="background:#0f172a; border:1px solid var(--accent-gold); color:var(--accent-gold); padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:bold;">تحويل الأرباح إلى رأس مال</button>
             </div>
 
             <div class="section-card">
@@ -415,7 +410,7 @@ app.get('/app', (req, res) => {
           <div id="tab-account" class="tab-content">
             <div class="section-card" style="border:1px solid #0088cc;">
               <h3 style="color:#0088cc;"><i class="fa-brands fa-telegram"></i> إشعارات تلجرام الفورية 📲</h3>
-              <p style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">ربط حسابك ببوت تلجرام يُتيح لك استقبال تنبيهات الإيداع، السحب، وصرف أرباح الباقات مباشرة على هاتفك.</p>
+              <p style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">ربط حسابك ببوت تلجرام يُتيح لك استقبال تنبيهات شحن الرصيد، السحب، وصرف أرباح الباقات مباشرة على هاتفك.</p>
               <a id="telegram-link" href="#" target="_blank" class="btn-gold" style="display:inline-block; text-decoration:none; text-align:center; background:#0088cc; color:white; width:100%;">
                 <i class="fa-brands fa-telegram"></i> اضغط هنا لتفعيل إشعارات تلجرام فوراً
               </a>
@@ -541,13 +536,13 @@ app.get('/app', (req, res) => {
           var dataWith = await fetchWithAuth('/api/user/withdrawals');
 
           var capital = 0; var profit = 0;
-          var deposits = (dataDep.data || []).map(function(d) { d.cat = 'إيداع'; return d; });
-          var withdrawals = (dataWith.data || []).map(function(w) { w.cat = 'سحب'; return w; });
+          var deposits = (dataDep.data || []).map(function(d) { d.cat = 'شحن رصيد'; return d; });
+          var withdrawals = (dataWith.data || []).map(function(w) { w.cat = 'سحب مالي'; return w; });
           var allTx = deposits.concat(withdrawals).sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
 
           allTx.forEach(function(t) {
             if (t.status === 'approved') {
-              if (t.cat === 'إيداع') {
+              if (t.cat === 'شحن رصيد') {
                 if (t.wallet_type === 'profit') profit += Number(t.amount); else capital += Number(t.amount);
               } else {
                 if (t.wallet_type === 'profit') profit -= Number(t.amount); else capital -= Number(t.amount);
@@ -626,7 +621,7 @@ app.get('/app', (req, res) => {
             btn.disabled = true;
             btn.style.opacity = '0.5';
             btn.style.cursor = 'not-allowed';
-            msg.innerText = '❌ رصيدك المتاح غير كافٍ للاشتراك بهذه الباقة. يرجى إيداع رصيد أولاً من قسم العمليات.';
+            msg.innerText = '❌ رصيدك غير كافٍ. يرجى شحن رصيدك أولاً من قسم الأموال والعمليات.';
             msg.style.color = 'var(--danger-red)';
           } else {
             btn.disabled = false;
@@ -742,7 +737,7 @@ app.get('/app', (req, res) => {
           try {
             var b64 = await convertFileToBase64(fileInput.files[0]);
             var data = await fetchWithAuth('/api/deposits', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ amount: amount, transaction_ref: ref, receipt_url: b64, wallet_type: 'capital' }) });
-            if (data.success) { msg.innerText = '✅ تم إرسال الإيداع بنجاح'; loadUserData(); } else msg.innerText = '❌ ' + data.error;
+            if (data.success) { msg.innerText = '✅ تم إرسال طلب الشحن بنجاح'; loadUserData(); } else msg.innerText = '❌ ' + data.error;
           } catch(e) { msg.innerText = 'خطأ في الرفع'; }
         }
 
@@ -754,12 +749,6 @@ app.get('/app', (req, res) => {
 
           var data = await fetchWithAuth('/api/withdrawals', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ amount: amount, payment_method: 'ZainCash', account_details: account, wallet_type: wallet }) });
           if (data.success) { msg.innerText = '✅ تم تقديم طلب السحب'; loadUserData(); } else msg.innerText = '❌ ' + data.error;
-        }
-
-        async function reinvestProfit() {
-          if (rawProfit <= 0) return alert('لا توجد أرباح متاحة!');
-          var data = await fetchWithAuth('/api/user/reinvest', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ amount: rawProfit }) });
-          if (data.success) { alert('✅ تمت عملية إعادة الاستثمار'); loadUserData(); }
         }
 
         async function uploadKYC() {
@@ -781,7 +770,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة (Executive Admin UI - بدون توزيع الأرباح العامة)
+// 2. لوحة الإدارة الشاملة (Executive Admin UI - حصرياً للباقات)
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -883,14 +872,14 @@ app.get('/admin', (req, res) => {
           <div class="stat-card">
             <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--success);"><i class="fa-solid fa-vault"></i></div>
             <div class="stat-info">
-              <p>الرساميل النشطة (الأصول)</p>
+              <p>رأس المال النشط بالباقات</p>
               <h3 id="stat-cap" style="color: var(--success);">0</h3>
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-icon" style="background: rgba(212, 175, 55, 0.15); color: var(--accent-gold);"><i class="fa-solid fa-coins"></i></div>
             <div class="stat-info">
-              <p>الأرباح الموزعة للزبائن</p>
+              <p>أرباح الباقات الموزعة</p>
               <h3 id="stat-prof" style="color: var(--accent-gold);">0</h3>
             </div>
           </div>
@@ -912,7 +901,7 @@ app.get('/admin', (req, res) => {
 
         <div class="admin-nav">
           <button class="nav-btn active" data-tab="tab-dash"><i class="fa-solid fa-chart-pie"></i> الرئيسية والإجراءات</button>
-          <button class="nav-btn" data-tab="tab-deposits"><i class="fa-solid fa-file-invoice-dollar"></i> طلبات الإيداع</button>
+          <button class="nav-btn" data-tab="tab-deposits"><i class="fa-solid fa-file-invoice-dollar"></i> طلبات شحن الرصيد</button>
           <button class="nav-btn" data-tab="tab-packages"><i class="fa-solid fa-box-archive"></i> الباقات الاستثمارية</button>
           <button class="nav-btn" data-tab="tab-withdrawals"><i class="fa-solid fa-money-bill-transfer"></i> طلبات السحب</button>
           <button class="nav-btn" data-tab="tab-users"><i class="fa-solid fa-id-card"></i> المستثمرين و KYC</button>
@@ -955,7 +944,7 @@ app.get('/admin', (req, res) => {
 
         <div id="tab-deposits" class="admin-tab">
           <div class="card-panel">
-            <h3><i class="fa-solid fa-file-invoice-dollar"></i> طلبات الإيداع الحرة وإشعارات الباقات</h3>
+            <h3><i class="fa-solid fa-file-invoice-dollar"></i> طلبات شحن الرصيد والاشتراكات</h3>
             <div class="table-responsive">
               <table>
                 <thead>
@@ -997,7 +986,7 @@ app.get('/admin', (req, res) => {
 
         <div id="tab-withdrawals" class="admin-tab">
           <div class="card-panel">
-            <h3><i class="fa-solid fa-money-bill-transfer"></i> طلبات السحب المالي المودعة</h3>
+            <h3><i class="fa-solid fa-money-bill-transfer"></i> طلبات السحب المالي</h3>
             <div class="table-responsive">
               <table>
                 <thead>
@@ -1048,7 +1037,7 @@ app.get('/admin', (req, res) => {
               <div>
                 <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:5px;">نوع العملية:</label>
                 <select id="modal-action-type" style="width:100%; padding:10px; background:#0f172a; border:1px solid var(--border-color); color:white; border-radius:10px;">
-                  <option value="add">➕ إضافة رصيد (مكافأة / إيداع)</option>
+                  <option value="add">➕ إضافة رصيد (مكافأة / شحن)</option>
                   <option value="deduct">➖ خصم رصيد (تسوية / تصحيح)</option>
                 </select>
               </div>
@@ -1068,7 +1057,7 @@ app.get('/admin', (req, res) => {
 
               <div>
                 <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:5px;">السبب / الملاحظات (تظهر للمستثمر):</label>
-                <input type="text" id="modal-reason" placeholder="مثال: مكافأة تميز، أو تسوية خطأ تحويل" style="width:100%; padding:10px; background:#0f172a; border:1px solid var(--border-color); color:white; border-radius:10px;">
+                <input type="text" id="modal-reason" placeholder="مثال: مكافأة تميز، أو تسوية شحن" style="width:100%; padding:10px; background:#0f172a; border:1px solid var(--border-color); color:white; border-radius:10px;">
               </div>
 
               <div style="display:flex; gap:10px; margin-top:10px;">
@@ -1227,7 +1216,7 @@ app.get('/admin', (req, res) => {
               var walletText = d.wallet_type === 'profit' ? '<span style="color:var(--accent-gold);">أرباح/عمولة</span>' : 'رأس مال';
               var receiptText = d.receipt_url ? '<a href="' + d.receipt_url + '" target="_blank" class="link-view"><i class="fa-solid fa-eye"></i> معاينة الإشعار</a>' : (d.transaction_ref || '-');
               var statusText = d.status === 'approved' ? '✅ مقبول' : '⏳ قيد الانتظار';
-              var actionBtn = d.status === 'pending' ? '<button data-id="' + d.id + '" class="btn-approve act-dep-approve"><i class="fa-solid fa-check"></i> قبول الإيداع</button>' : '-';
+              var actionBtn = d.status === 'pending' ? '<button data-id="' + d.id + '" class="btn-approve act-dep-approve"><i class="fa-solid fa-check"></i> قبول الشحن</button>' : '-';
 
               return '<tr>' +
                        '<td><strong>' + d.phone_number + '</strong></td>' +
@@ -1686,17 +1675,6 @@ app.post('/api/withdrawals', authenticateUser, async (req, res) => {
   }
 });
 
-app.post('/api/user/reinvest', authenticateUser, async (req, res) => {
-  try {
-    const { amount } = req.body;
-    await supabase.from('withdrawals').insert([{ user_id: req.user.id, phone_number: req.user.phone, amount, payment_method: 'Reinvest Auto', account_details: 'Capital Wallet', status: 'approved', wallet_type: 'profit' }]);
-    await supabase.from('deposits').insert([{ user_id: req.user.id, phone_number: req.user.phone, amount, transaction_ref: 'REINVEST_AUTO', receipt_url: 'INTERNAL', status: 'approved', wallet_type: 'capital' }]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 app.post('/api/user/kyc', authenticateUser, async (req, res) => {
   try {
     const publicUrl = await uploadToStorage(req.body.kyc_doc);
@@ -1775,17 +1753,17 @@ app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
       if (dep && dep.wallet_type === 'capital') {
         await supabase.from('notifications').insert([{
           user_id: dep.user_id,
-          title: '✅ تأكيد الإيداع',
-          message: `تم قبول إيداعك بمبلغ ${Number(dep.amount).toLocaleString()} د.ع بنجاح.`
+          title: '✅ تأكيد شحن الرصيد',
+          message: `تم قبول شحن رصيدك بمبلغ ${Number(dep.amount).toLocaleString()} د.ع بنجاح.`
         }]);
 
         const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', dep.user_id).single();
         if (usr) {
           if (usr.onesignal_player_id) {
-            await sendOneSignalNotification([usr.onesignal_player_id], "✅ تأكيد الإيداع", `تم قبول إيداعك بمبلغ ${Number(dep.amount).toLocaleString()} د.ع بنجاح.`);
+            await sendOneSignalNotification([usr.onesignal_player_id], "✅ تأكيد شحن الرصيد", `تم قبول شحن رصيدك بمبلغ ${Number(dep.amount).toLocaleString()} د.ع بنجاح.`);
           }
           if (usr.telegram_chat_id) {
-            await sendTelegramNotification(usr.telegram_chat_id, `✅ <b>تم قبول الإيداع!</b>\n\nتم تأكيد وإضافة مبلغ <b>${Number(dep.amount).toLocaleString()} د.ع</b> لرصيد رأس مالك النشط.`);
+            await sendTelegramNotification(usr.telegram_chat_id, `✅ <b>تم شحن الرصيد!</b>\n\nتم تأكيد وإضافة مبلغ <b>${Number(dep.amount).toLocaleString()} د.ع</b> إلى رصيدك المتاح لشراء الباقات.`);
           }
         }
 
@@ -1810,7 +1788,7 @@ app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
                 await sendOneSignalNotification([refUser.onesignal_player_id], "🎁 مكافأة إحالة جديدة (2%)", `تم إضافة عمولة 2% بقيمة ${commission.toLocaleString()} د.ع لرصيد أرباحك.`);
               }
               if (refUser.telegram_chat_id) {
-                await sendTelegramNotification(refUser.telegram_chat_id, `🎁 <b>مكافأة إحالة جديدة!</b>\n\nتم إضافة عمولة 2% بقيمة <b>${commission.toLocaleString()} د.ع</b> لرصيد أرباحك نتيجة إيداع مستثمر جديد عبر رابطك.`);
+                await sendTelegramNotification(refUser.telegram_chat_id, `🎁 <b>مكافأة إحالة جديدة!</b>\n\nتم إضافة عمولة 2% بقيمة <b>${commission.toLocaleString()} د.ع</b> لرصيد أرباحك نتيجة شحن مستثمر جديد عبر رابطك.`);
               }
             }
           }
