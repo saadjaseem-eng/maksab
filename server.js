@@ -15,7 +15,6 @@ app.use(express.json({ limit: '20mb' }));
 // المتغيرات السرية المأخوذة من ملف .env
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const JWT_SECRET = process.env.JWT_SECRET || 'maksab_super_secure_jwt_secret_2026';
-const EXCHANGE_RATE = process.env.EXCHANGE_RATE || 1500;
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_BOT_NAME = process.env.TELEGRAM_BOT_NAME || 'MaksabBot';
@@ -159,7 +158,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر الشاملة (Investor UI مخصصة للباقات)
+// 1. واجهة المستثمر الشاملة (مع جرس إشعارات في مكان قائمة العملات)
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -179,7 +178,6 @@ app.get('/app', (req, res) => {
         body { background: var(--bg-color); color: var(--text-main); margin: 0; padding: 20px; min-height: 100vh; }
         .container { max-width: 900px; margin: 0 auto; }
         .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: rgba(30, 41, 59, 0.8); padding: 15px 20px; border-radius: 15px; border: 1px solid rgba(212, 175, 55, 0.2); position: relative; }
-        .currency-toggle { background: #0f172a; border: 1px solid var(--accent-gold); color: var(--accent-gold); padding: 5px 10px; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .auth-card { background: var(--card-bg); padding: 35px 25px; border-radius: 20px; max-width: 400px; margin: 40px auto; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         .input-group { position: relative; margin-bottom: 15px; }
         .input-group i { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
@@ -212,7 +210,7 @@ app.get('/app', (req, res) => {
         .package-return { color: var(--success-green); font-size: 14px; font-weight: bold; margin-bottom: 15px; }
 
         .notif-bell-container { position: relative; cursor: pointer; }
-        .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
+        .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
         .notif-dropdown { position: absolute; top: 55px; left: 0; width: 310px; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 999; display: none; }
         .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
@@ -260,6 +258,7 @@ app.get('/app', (req, res) => {
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
+              <!-- جرس الإشعارات في مكان قائمة العملات -->
               <div class="notif-bell-container" onclick="toggleNotifs()">
                 <div class="notif-bell-icon"><i class="fa-solid fa-bell"></i></div>
                 <span class="notif-count-badge" id="notif-badge" style="display:none;">0</span>
@@ -273,11 +272,7 @@ app.get('/app', (req, res) => {
                 </div>
               </div>
 
-              <select class="currency-toggle" id="currency-toggle" onchange="loadUserData()">
-                <option value="IQD">IQD د.ع</option>
-                <option value="USD">USD $</option>
-              </select>
-              <button onclick="logout()" style="background:transparent; color:var(--danger-red); border:none; cursor:pointer;"><i class="fa-solid fa-power-off"></i> خروج</button>
+              <button onclick="logout()" style="background:transparent; color:var(--danger-red); border:none; cursor:pointer; font-size:14px;"><i class="fa-solid fa-power-off"></i> خروج</button>
             </div>
           </div>
 
@@ -286,7 +281,7 @@ app.get('/app', (req, res) => {
             <div class="card-balance" id="net-balance">0</div>
             <div class="wallet-split">
               <div class="wallet-item">
-                <p>رأس المال / الإيداعات <i class="fa-solid fa-vault"></i></p>
+                <p>رأس المال / الشحن <i class="fa-solid fa-vault"></i></p>
                 <h4 id="active-capital" style="color:var(--success-green); margin:0;">0</h4>
               </div>
               <div class="wallet-item">
@@ -380,7 +375,7 @@ app.get('/app', (req, res) => {
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
               <div class="section-card">
                 <h3>شحن رصيد لشراء الباقات</h3>
-                <input type="number" id="deposit-amount" placeholder="المبلغ بالدينار" style="margin-bottom:10px;">
+                <input type="number" id="deposit-amount" placeholder="المبلغ بالدينار العراقي" style="margin-bottom:10px;">
                 <input type="text" id="deposit-ref" placeholder="رقم التحويل (Ref ID)" style="margin-bottom:10px;">
                 <input type="file" id="deposit-file" accept="image/*" style="margin-bottom:10px;">
                 <button class="btn-gold" onclick="submitDeposit()" id="btn-dep">تأكيد شحن الرصيد</button>
@@ -389,7 +384,7 @@ app.get('/app', (req, res) => {
 
               <div class="section-card">
                 <h3>سحب الأرباح والأرصدة</h3>
-                <input type="number" id="withdraw-amount" placeholder="المبلغ المراد سحبه" style="margin-bottom:10px;">
+                <input type="number" id="withdraw-amount" placeholder="المبلغ بالدينار العراقي" style="margin-bottom:10px;">
                 <select id="withdraw-wallet" style="margin-bottom:10px;">
                   <option value="profit">من محفظة الأرباح (متاح دائماً)</option>
                   <option value="capital">من رأس المال المتاح (غير المستثمر)</option>
@@ -448,8 +443,6 @@ app.get('/app', (req, res) => {
         var selectedPkg = null;
 
         function formatMoney(amount) {
-          var curr = document.getElementById('currency-toggle') ? document.getElementById('currency-toggle').value : 'IQD';
-          if (curr === 'USD') return '$' + (amount / ${EXCHANGE_RATE}).toFixed(2);
           return Number(amount).toLocaleString() + ' د.ع';
         }
 
@@ -770,7 +763,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة (Executive Admin UI - حصرياً للباقات)
+// 2. لوحة الإدارة الشاملة (Executive Admin UI)
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
