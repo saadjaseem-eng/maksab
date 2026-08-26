@@ -781,7 +781,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة (Executive Admin UI - التصميم الأصلي مع أزرار منسقة)
+// 2. لوحة الإدارة الشاملة (Executive Admin UI - بدون توزيع الأرباح العامة)
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -836,10 +836,6 @@ app.get('/admin', (req, res) => {
 
         .card-panel { background: var(--card-bg); border-radius: 18px; border: 1px solid var(--border-color); padding: 25px; margin-bottom: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); }
         .card-panel h3 { margin-top: 0; margin-bottom: 20px; font-size: 16px; color: var(--accent-gold); display: flex; align-items: center; gap: 10px; }
-
-        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end; }
-        .form-group label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
-        .form-group input { width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border-color); background: #0f172a; color: white; outline: none; font-size: 14px; }
 
         .btn-gold-action { background: linear-gradient(135deg, #d4af37 0%, #aa7c11 100%); color: #000; font-weight: bold; border: none; padding: 12px 20px; border-radius: 10px; cursor: pointer; width: 100%; font-size: 14px; }
         .btn-gold-action:hover { opacity: 0.9; }
@@ -930,29 +926,6 @@ app.get('/admin', (req, res) => {
               <button class="btn-gold-action" style="max-width:280px;" id="btn-trigger-payouts"><i class="fa-solid fa-rocket"></i> تنفيذ صرف الباقات المكتملة الآن</button>
               <span id="payout-msg" style="font-size:13px; font-weight:bold;"></span>
             </div>
-          </div>
-
-          <div class="card-panel">
-            <h3><i class="fa-solid fa-chart-line"></i> توزيع الأرباح الشهري العام</h3>
-            <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">يتم حساب نسبة كل مستثمر بناءً على حجم رأس ماله النشط وتوزيع حصته مباشرة لملف الأرباح الخاص به.</p>
-            <div class="form-grid">
-              <div class="form-group">
-                <label>الشهر والسنة:</label>
-                <input type="text" id="profit-month" placeholder="مثال: 08-2026">
-              </div>
-              <div class="form-group">
-                <label>الأرباح الكلية الصافية:</label>
-                <input type="number" id="profit-net" placeholder="المبلغ الصافي بالدينار">
-              </div>
-              <div class="form-group">
-                <label>حصة المستثمرين (%):</label>
-                <input type="number" id="profit-rate" value="20">
-              </div>
-              <div class="form-group">
-                <button id="btn-execute-profit" class="btn-gold-action"><i class="fa-solid fa-paper-plane"></i> توزيع الأرباح العامة</button>
-              </div>
-            </div>
-            <p id="profit-msg" style="font-size:13px; font-weight:bold; margin-top:15px; margin-bottom:0;"></p>
           </div>
 
           <!-- 📢 بطاقة الإعلانات الجماعية (Broadcast) -->
@@ -1122,7 +1095,6 @@ app.get('/admin', (req, res) => {
           document.getElementById('btn-refresh-data').addEventListener('click', loadAdminData);
           document.getElementById('btn-admin-logout').addEventListener('click', logoutAdmin);
           document.getElementById('btn-trigger-payouts').addEventListener('click', triggerPackagePayouts);
-          document.getElementById('btn-execute-profit').addEventListener('click', executeProfit);
           document.getElementById('btn-send-broadcast').addEventListener('click', sendBroadcastMessage);
           document.getElementById('btn-submit-balance').addEventListener('click', submitBalanceAdjustment);
           document.getElementById('btn-close-balance').addEventListener('click', closeBalanceModal);
@@ -1340,23 +1312,6 @@ app.get('/admin', (req, res) => {
 
         async function approveWith(id) {
           await fetch('/api/admin/withdrawals/status', { method: 'PATCH', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + adminToken}, body: JSON.stringify({ id: id, status: 'approved' }) });
-          loadAdminData();
-        }
-
-        async function executeProfit() {
-          var monthYear = document.getElementById('profit-month').value;
-          var netProfit = document.getElementById('profit-net').value;
-          var investorRate = document.getElementById('profit-rate').value;
-
-          document.getElementById('profit-msg').innerText = 'جاري تنفيذ وتوزيع الأرباح...';
-          var res = await fetch('/api/admin/distribute-profits', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + adminToken},
-            body: JSON.stringify({ monthYear: monthYear, netProfit: netProfit, investorRate: investorRate })
-          });
-          var data = await res.json();
-          document.getElementById('profit-msg').innerText = data.success ? '✅ ' + data.message : '❌ ' + data.error;
-          document.getElementById('profit-msg').style.color = data.success ? 'var(--success)' : 'var(--danger)';
           loadAdminData();
         }
 
@@ -1863,60 +1818,6 @@ app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
       }
     }
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/admin/distribute-profits', authenticateAdmin, async (req, res) => {
-  try {
-    const { monthYear, netProfit, investorRate } = req.body;
-    const totalDistributable = parseFloat(netProfit) * (parseFloat(investorRate) / 100);
-
-    const { data: deps } = await supabase.from('deposits').select('*').eq('status', 'approved').eq('wallet_type', 'capital');
-    const { data: withs } = await supabase.from('withdrawals').select('*').eq('status', 'approved').eq('wallet_type', 'capital');
-
-    let userCapitals = {}; let totalGlobalCapital = 0;
-    (deps || []).forEach(d => { userCapitals[d.user_id] = (userCapitals[d.user_id] || 0) + Number(d.amount); totalGlobalCapital += Number(d.amount); });
-    (withs || []).forEach(w => { if(userCapitals[w.user_id]) { userCapitals[w.user_id] -= Number(w.amount); totalGlobalCapital -= Number(w.amount); } });
-
-    if (totalGlobalCapital <= 0) throw new Error('لا يوجد رأس مال نشط للتوزيع عليه.');
-
-    const { data: users } = await supabase.from('users').select('id, phone_number, telegram_chat_id, onesignal_player_id');
-    const profitInserts = [];
-    const notifInserts = [];
-
-    for (const uid in userCapitals) {
-      if (userCapitals[uid] > 0) {
-        const sharePct = userCapitals[uid] / totalGlobalCapital;
-        const profitAmt = totalDistributable * sharePct;
-        const uInfo = users.find(x => x.id === uid);
-        if (profitAmt > 0 && uInfo) {
-          profitInserts.push({ user_id: uid, phone_number: uInfo.phone_number, amount: profitAmt, transaction_ref: 'PROFIT_' + monthYear, receipt_url: 'SYSTEM_DISTRIBUTION', status: 'approved', wallet_type: 'profit' });
-          
-          notifInserts.push({
-            user_id: uid,
-            title: '📈 توزيع الأرباح الشهري',
-            message: `تم إيداع حصتك من أرباح شهر (${monthYear}) بمبلغ ${profitAmt.toLocaleString()} د.ع بنجاح.`
-          });
-
-          if (uInfo.onesignal_player_id) {
-            await sendOneSignalNotification([uInfo.onesignal_player_id], "📈 توزيع الأرباح الشهري", `تم إضافة حصتك من الأرباح لشهر ${monthYear} بقيمة ${profitAmt.toLocaleString()} د.ع.`);
-          }
-          if (uInfo.telegram_chat_id) {
-            await sendTelegramNotification(uInfo.telegram_chat_id, `📈 <b>توزيع الأرباح الشهري!</b>\n\nتم إضافة حصتك من الأرباح لشهر <b>${monthYear}</b> بقيمة <b>${profitAmt.toLocaleString()} د.ع</b> لحساب أرباحك.`);
-          }
-        }
-      }
-    }
-
-    if (profitInserts.length > 0) {
-      const { error } = await supabase.from('deposits').insert(profitInserts);
-      if(error) throw error;
-      await supabase.from('notifications').insert(notifInserts);
-    }
-
-    res.json({ success: true, message: `تم توزيع إجمالي ${totalDistributable.toLocaleString()} د.ع على المستثمرين بنجاح!` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
