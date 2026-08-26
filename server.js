@@ -23,6 +23,16 @@ const TELEGRAM_BOT_NAME = process.env.TELEGRAM_BOT_NAME || 'MaksabBot';
 const ONE_SIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
+// ذاكرة مؤقتة لحالة الباقات (مفعلة أو متوقفة مؤقتاً) لضمان السرعة المطلقة والاستجابة الفورية
+let packageStatusMemory = {
+  'الباقة الفضية الشهرية': true,
+  'الباقة الذهبية الشهرية': true,
+  'الباقة الماسية الشهرية': true,
+  'الباقة السنوية الفضية': true,
+  'الباقة السنوية الذهبية': true,
+  'الباقة السنوية الماسية VIP': true
+};
+
 // ==========================================
 // دالة إرسال إشعارات OneSignal للموبايل
 // ==========================================
@@ -158,7 +168,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر الشاملة (مع فحص حالة الباقات النشطة/المتوقفة)
+// 1. واجهة المستثمر الشاملة
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -530,7 +540,7 @@ app.get('/app', (req, res) => {
               ];
 
               packageNames.forEach(function(name) {
-                var isPaused = settings[name] === false; // إذا كانت متوقفة
+                var isPaused = settings[name] === false;
                 var btn = document.getElementById('btn-sub-' + name);
                 var card = document.getElementById('card-' + name);
                 if (btn && card) {
@@ -568,7 +578,7 @@ app.get('/app', (req, res) => {
           loadUserPackages();
           loadUserNotifications();
           fetchSystemSettings();
-          setInterval(fetchSystemSettings, 15000); // تحديث دوري لحالة الباقات
+          setInterval(fetchSystemSettings, 10000);
         }
 
         async function fetchWithAuth(url, options) {
@@ -822,7 +832,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة (مع تحكم تفعيل وإيقاف الباقات يدوياً)
+// 2. لوحة الإدارة الشاملة (Executive Admin UI)
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -1486,7 +1496,7 @@ app.get('/admin', (req, res) => {
 
             var data = await res.json();
             msg.innerText = data.success ? '✅ ' + data.message : '❌ ' + data.error;
-            msgEl.style.color = data.success ? 'var(--success)' : 'var(--danger)';
+            msg.style.color = data.success ? 'var(--success)' : 'var(--danger)';
 
             if (data.success) {
               setTimeout(function() { closeBalanceModal(); loadAdminData(); }, 1200);
@@ -1555,31 +1565,17 @@ app.get('/admin', (req, res) => {
 // ==========================================
 
 // مسار جلب إعدادات حالة الباقات
-app.get('/api/packages/settings', async (req, res) => {
-  try {
-    const { data } = await supabase.from('settings').select('*').eq('key', 'package_status').single();
-    res.json({ success: true, data: data ? data.value : {} });
-  } catch (err) {
-    res.json({ success: true, data: {} });
-  }
+app.get('/api/packages/settings', (req, res) => {
+  res.json({ success: true, data: packageStatusMemory });
 });
 
 // مسار إداري لتغيير حالة الباقة (تفعيل / إيقاف مؤقت)
-app.post('/api/admin/packages/toggle', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/packages/toggle', authenticateAdmin, (req, res) => {
   try {
     const { package_name, is_paused } = req.body;
-    
-    let { data: settingRow } = await supabase.from('settings').select('*').eq('key', 'package_status').single();
-    let currentSettings = settingRow ? settingRow.value : {};
-
-    currentSettings[package_name] = !is_paused; // true إذا مفعلة، false إذا متوقفة
-
-    if (settingRow) {
-      await supabase.from('settings').update({ value: currentSettings }).eq('key', 'package_status');
-    } else {
-      await supabase.from('settings').insert([{ key: 'package_status', value: currentSettings }]);
+    if (package_name) {
+      packageStatusMemory[package_name] = !is_paused; // true إذا مفعلة، false إذا متوقفة
     }
-
     res.json({ success: true, message: 'تم تحديث حالة الباقة بنجاح!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -1689,9 +1685,8 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
 
-    // التحقق مما إذا كانت الباقة متوقفة مؤقتاً من الإدارة
-    const { data: settingRow } = await supabase.from('settings').select('*').eq('key', 'package_status').single();
-    if (settingRow && settingRow.value && settingRow.value[plan_name] === false) {
+    // التحقق مما إذا كانت الباقة متوقفة مؤقتاً
+    if (packageStatusMemory[plan_name] === false) {
       return res.status(400).json({ success: false, error: 'عذراً، هذه الباقة متوقفة مؤقتاً من قبل الإدارة حالياً.' });
     }
 
@@ -2101,7 +2096,7 @@ app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) 
         wallet_type: walletType || 'capital'
       }]);
     } else {
-      await supabase.init('withdrawals').insert([{
+      await supabase.from('withdrawals').insert([{
         user_id: userId,
         phone_number: user.phone_number,
         amount: numAmount,
@@ -2147,7 +2142,7 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, async (req, res) => {
 
     await supabase.from('notifications').delete().eq('user_id', userId);
     await supabase.from('investment_packages').delete().eq('user_id', userId);
-    await supabase.from('deposits').delete().eq('user_id, userId'); // Fixed syntax internally below if needed, or keeping standard delete
+    await supabase.from('deposits').delete().eq('user_id', userId);
     await supabase.from('withdrawals').delete().eq('user_id', userId);
 
     const { error } = await supabase.from('users').delete().eq('id', userId);
