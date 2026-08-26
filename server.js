@@ -122,7 +122,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر
+// 1. واجهة المستثمر المحدثة (مخصصة للباقات الشهرية والسنوية)
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -176,10 +176,7 @@ app.get('/app', (req, res) => {
         .notif-bell-container { position: relative; cursor: pointer; }
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
-        
-        /* تعديل متمركز وآمن تماماً لشاشات الهواتف يمنع الخروج عن الحواف */
-        .notif-dropdown { position: absolute; top: 55px; right: 0px; left: auto; width: 300px; max-width: 85vw; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.9); z-index: 9999; display: none; }
-        
+        .notif-dropdown { position: absolute; top: 55px; left: 0; width: 310px; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 999; display: none; }
         .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
         .notif-item.read { border-right-color: #334155; opacity: 0.7; }
         .notif-item-title { font-weight: bold; font-size: 12px; color: var(--accent-gold); }
@@ -252,7 +249,7 @@ app.get('/app', (req, res) => {
             <div class="card-balance" id="net-balance">0</div>
             <div class="wallet-split">
               <div class="wallet-item">
-                <p>رصيد رأس المال المتاح <i class="fa-solid fa-wallet"></i></p>
+                <p>رأس المال المتاح للاشتراك <i class="fa-solid fa-wallet"></i></p>
                 <h4 id="active-capital" style="color:var(--success-green); margin:0;">0</h4>
               </div>
               <div class="wallet-item">
@@ -716,7 +713,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة المبسطة
+// 2. لوحة الإدارة المبسطة والمختصة للباقات
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -791,8 +788,8 @@ app.get('/admin', (req, res) => {
           var w = await (await fetch('/api/admin/withdrawals', { headers: h })).json();
           var p = await (await fetch('/api/admin/packages', { headers: h })).json();
 
-          document.getElementById('dep-table').innerHTML = (d.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td><a href="' + x.receipt_url + '" target="_blank">معاينة</a></td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveDep(\'' + x.id + '\')">قبول</button>' : '-') + '</td></tr>').join('');
-          document.getElementById('with-table').innerHTML = (w.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td>' + x.account_details + '</td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveWith(\'' + x.id + '\')">موافقة</button>' : '-') + '</td></tr>').join('');
+          document.getElementById('dep-table').innerHTML = (d.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td><a href="' + x.receipt_url + '" target="_blank">معاينة</a></td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveDep(\\'' + x.id + '\\')">قبول</button>' : '-') + '</td></tr>').join('');
+          document.getElementById('with-table').innerHTML = (w.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.amount + '</td><td>' + x.account_details + '</td><td>' + x.status + '</td><td>' + (x.status === 'pending' ? '<button class="btn-approve" onclick="approveWith(\\'' + x.id + '\\')">موافقة</button>' : '-') + '</td></tr>').join('');
           document.getElementById('pkg-table').innerHTML = (p.data || []).map(x => '<tr><td>' + x.phone_number + '</td><td>' + x.plan_name + '</td><td>' + x.invested_amount + '</td><td>' + x.expected_payout + '</td><td>' + new Date(x.end_date).toLocaleDateString() + '</td><td>' + x.status + '</td></tr>').join('');
         }
 
@@ -986,6 +983,7 @@ app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) =
   res.json({ success: true });
 });
 
+// صرف أرباح الباقات المكتملة تلقائياً
 app.post('/api/admin/packages/payout', authenticateAdmin, async (req, res) => {
   try {
     const now = new Date().toISOString();
