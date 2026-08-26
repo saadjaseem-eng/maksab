@@ -159,7 +159,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر الشاملة (Investor UI مع زر تفعيل الإشعارات)
+// 1. واجهة المستثمر الشاملة (Investor UI مع دعم PWA)
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -256,12 +256,7 @@ app.get('/app', (req, res) => {
           <div class="top-nav">
             <div>
               <strong style="color:var(--accent-gold);"><span id="user-name"></span></strong>
-              <div style="font-size:11px; color:var(--text-muted); display:flex; gap:8px; align-items:center; margin-top:3px;">
-                <span id="kyc-badge-status">غير موثق</span>
-                <button onclick="requestPushPermission()" style="background:var(--accent-gold); color:black; border:none; padding:3px 8px; border-radius:6px; font-weight:bold; font-size:10px; cursor:pointer;">
-                  🔔 تفعيل الإشعارات
-                </button>
-              </div>
+              <div style="font-size:11px; color:var(--text-muted);" id="kyc-badge-status">غير موثق</div>
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
@@ -456,17 +451,6 @@ app.get('/app', (req, res) => {
         var currentUser = JSON.parse(localStorage.getItem('maksab_user')) || null;
         var rawCapital = 0; var rawProfit = 0;
         var selectedPkg = null;
-
-        // دالة طلب إذن الإشعارات يدويًا
-        function requestPushPermission() {
-          try {
-            OneSignal.Notifications.requestPermission(true).then(function(accepted) {
-              alert("حالة الإشعارات: " + (accepted ? "تم السماح بنجاح ✅" : "تم الرفض ❌"));
-            });
-          } catch(e) {
-            alert("تفعيل الإشعارات متاح داخل تطبيق الموبايل المثبت APK");
-          }
-        }
 
         function formatMoney(amount) {
           var curr = document.getElementById('currency-toggle') ? document.getElementById('currency-toggle').value : 'IQD';
