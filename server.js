@@ -158,7 +158,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر الشاملة (مع جرس إشعارات في مكان قائمة العملات)
+// 1. واجهة المستثمر الشاملة (مع نافذة إشعارات مركزية جذابة)
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -210,14 +210,21 @@ app.get('/app', (req, res) => {
         .package-return { color: var(--success-green); font-size: 14px; font-weight: bold; margin-bottom: 15px; }
 
         .notif-bell-container { position: relative; cursor: pointer; }
-        .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; }
-        .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; }
-        .notif-dropdown { position: absolute; top: 55px; left: 0; width: 310px; background: var(--card-bg); border: 1px solid var(--accent-gold); border-radius: 15px; padding: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 999; display: none; }
-        .notif-item { background: #0f172a; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border-right: 3px solid var(--accent-gold); }
-        .notif-item.read { border-right-color: #334155; opacity: 0.7; }
-        .notif-item-title { font-weight: bold; font-size: 12px; color: var(--accent-gold); }
-        .notif-item-msg { font-size: 11px; color: var(--text-main); margin-top: 3px; }
-        .notif-item-date { font-size: 9px; color: var(--text-muted); margin-top: 4px; text-align: left; }
+        .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; box-shadow: 0 4px 10px rgba(212,175,55,0.15); }
+        .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+
+        /* نافذة الإشعارات المركزية الجذابة (Modal) */
+        .notif-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; display: none; justify-content: center; align-items: center; padding: 15px; }
+        .notif-modal-content { background: var(--card-bg); border: 2px solid var(--accent-gold); border-radius: 22px; width: 100%; max-width: 520px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.9); overflow: hidden; animation: zoomIn 0.3s ease; }
+        @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .notif-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 25px; border-bottom: 1px solid rgba(255,255,255,0.08); background: #0f172a; }
+        .notif-modal-body { padding: 20px 25px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+        .notif-full-card { background: #0f172a; border: 1px solid rgba(212,175,55,0.25); border-radius: 14px; padding: 16px; border-right: 4px solid var(--accent-gold); position: relative; }
+        .notif-full-card.read { border-right-color: #334155; opacity: 0.75; }
+        .notif-full-title { font-size: 15px; font-weight: bold; color: var(--accent-gold); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+        .notif-full-msg { font-size: 13px; color: var(--text-main); line-height: 1.6; word-break: break-word; }
+        .notif-full-date { font-size: 11px; color: var(--text-muted); margin-top: 10px; text-align: left; display: block; }
       </style>
     </head>
     <body>
@@ -258,21 +265,31 @@ app.get('/app', (req, res) => {
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
-              <!-- جرس الإشعارات في مكان قائمة العملات -->
-              <div class="notif-bell-container" onclick="toggleNotifs()">
+              <!-- جرس الإشعارات الفاخر -->
+              <div class="notif-bell-container" onclick="openNotifModal()" title="عرض الإشعارات والتنبيهات">
                 <div class="notif-bell-icon"><i class="fa-solid fa-bell"></i></div>
                 <span class="notif-count-badge" id="notif-badge" style="display:none;">0</span>
-                
-                <div class="notif-dropdown" id="notif-dropdown">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #334155; padding-bottom:5px;">
-                    <strong style="font-size:12px; color:var(--accent-gold);">🔔 الإشعارات والتنبيهات</strong>
-                    <small onclick="markAllNotifsRead(event)" style="font-size:10px; color:var(--text-muted); cursor:pointer;">تحديد الكل كمقروء</small>
-                  </div>
-                  <div id="notif-list-container" style="max-height:220px; overflow-y:auto;"></div>
-                </div>
               </div>
 
               <button onclick="logout()" style="background:transparent; color:var(--danger-red); border:none; cursor:pointer; font-size:14px;"><i class="fa-solid fa-power-off"></i> خروج</button>
+            </div>
+          </div>
+
+          <!-- نافذة الإشعارات المركزية الجذابة -->
+          <div class="notif-modal-overlay" id="notif-modal-overlay">
+            <div class="notif-modal-content">
+              <div class="notif-modal-header">
+                <h3 style="margin:0; color:var(--accent-gold); font-size:18px; display:flex; align-items:center; gap:10px;">
+                  <i class="fa-solid fa-bell"></i> مركز التنبيهات والإشعارات
+                </h3>
+                <div style="display:flex; gap:10px; align-items:center;">
+                  <button onclick="markAllNotifsRead()" style="background:rgba(212,175,55,0.15); border:1px solid var(--accent-gold); color:var(--accent-gold); padding:5px 12px; border-radius:8px; font-size:11px; cursor:pointer; font-weight:bold;">تحديد الكل كمقروء</button>
+                  <button onclick="closeNotifModal()" style="background:transparent; border:none; color:var(--text-muted); font-size:20px; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+              </div>
+              <div class="notif-modal-body" id="notif-modal-list-container">
+                <p style="text-align:center; color:var(--text-muted); font-size:13px;">جاري التحميل...</p>
+              </div>
             </div>
           </div>
 
@@ -570,30 +587,33 @@ app.get('/app', (req, res) => {
             badge.style.display = 'none';
           }
 
-          var container = document.getElementById('notif-list-container');
+          var container = document.getElementById('notif-modal-list-container');
           if (notifs.length === 0) {
-            container.innerHTML = '<p style="font-size:11px; color:var(--text-muted); text-align:center;">لا توجد إشعارات حالياً</p>';
+            container.innerHTML = '<div style="text-align:center; padding:30px;"><i class="fa-regular fa-bell-slash" style="font-size:35px; color:var(--text-muted); margin-bottom:10px;"></i><p style="font-size:13px; color:var(--text-muted);">لا توجد إشعارات أو تنبيهات حالياً</p></div>';
             return;
           }
 
           container.innerHTML = notifs.map(function(n) {
             var readClass = n.is_read ? 'read' : '';
             var dateStr = new Date(n.created_at).toLocaleString('ar-IQ');
-            return '<div class="notif-item ' + readClass + '">' +
-                     '<div class="notif-item-title">' + n.title + '</div>' +
-                     '<div class="notif-item-msg">' + n.message + '</div>' +
-                     '<div class="notif-item-date">' + dateStr + '</div>' +
+            return '<div class="notif-full-card ' + readClass + '">' +
+                     '<div class="notif-full-title"><i class="fa-solid fa-circle-info" style="color:var(--accent-gold);"></i> ' + n.title + '</div>' +
+                     '<div class="notif-full-msg">' + n.message + '</div>' +
+                     '<span class="notif-full-date"><i class="fa-regular fa-clock"></i> ' + dateStr + '</span>' +
                    '</div>';
           }).join('');
         }
 
-        function toggleNotifs() {
-          var dropdown = document.getElementById('notif-dropdown');
-          dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+        function openNotifModal() {
+          document.getElementById('notif-modal-overlay').style.display = 'flex';
+          loadUserNotifications();
         }
 
-        async function markAllNotifsRead(evt) {
-          evt.stopPropagation();
+        function closeNotifModal() {
+          document.getElementById('notif-modal-overlay').style.display = 'none';
+        }
+
+        async function markAllNotifsRead() {
           await fetchWithAuth('/api/user/notifications/read', { method: 'POST' });
           loadUserNotifications();
         }
@@ -1612,7 +1632,7 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
 });
 
 app.get('/api/user/notifications', authenticateUser, async (req, res) => {
-  const { data } = await supabase.from('notifications').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(10);
+  const { data } = await supabase.from('notifications').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(20);
   res.json({ success: true, data: data || [] });
 });
 
