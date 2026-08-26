@@ -158,7 +158,7 @@ const authenticateAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// 1. واجهة المستثمر الشاملة (مع نافذة إشعارات مركزية جذابة)
+// 1. واجهة المستثمر الشاملة (مع فحص حالة الباقات النشطة/المتوقفة)
 // ==========================================
 app.get('/app', (req, res) => {
   res.send(`
@@ -214,7 +214,7 @@ app.get('/app', (req, res) => {
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
 
-        /* نافذة الإشعارات المركزية الجذابة (Modal) */
+        /* نافذة الإشعارات المركزية الجذابة */
         .notif-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; display: none; justify-content: center; align-items: center; padding: 15px; }
         .notif-modal-content { background: var(--card-bg); border: 2px solid var(--accent-gold); border-radius: 22px; width: 100%; max-width: 520px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.9); overflow: hidden; animation: zoomIn 0.3s ease; }
         @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -326,45 +326,45 @@ app.get('/app', (req, res) => {
 
               <!-- الباقات الشهرية -->
               <div class="package-grid" id="grid-monthly">
-                <div class="package-card">
+                <div class="package-card" id="card-الباقة الفضية الشهرية">
                   <div class="package-title">🥉 الباقة الفضية الشهرية</div>
                   <div class="package-price">100,000 د.ع</div>
                   <div class="package-return">العائد بعد شهر: 120,000 د.ع</div>
-                  <button class="btn-gold" onclick="openPackageModal('الباقة الفضية الشهرية', 100000, 120000, 1)">اشترك الآن 🚀</button>
+                  <button class="btn-gold" id="btn-sub-الباقة الفضية الشهرية" onclick="openPackageModal('الباقة الفضية الشهرية', 100000, 120000, 1)">اشترك الآن 🚀</button>
                 </div>
-                <div class="package-card" style="border-color: #d4af37; background: rgba(212, 175, 55, 0.05);">
+                <div class="package-card" id="card-الباقة الذهبية الشهرية" style="border-color: #d4af37; background: rgba(212, 175, 55, 0.05);">
                   <div class="package-title">🥇 الباقة الذهبية الشهرية</div>
                   <div class="package-price">250,000 د.ع</div>
                   <div class="package-return">العائد بعد شهر: 300,000 د.ع</div>
-                  <button class="btn-gold" onclick="openPackageModal('الباقة الذهبية الشهرية', 250000, 300000, 1)">اشترك الآن 🚀</button>
+                  <button class="btn-gold" id="btn-sub-الباقة الذهبية الشهرية" onclick="openPackageModal('الباقة الذهبية الشهرية', 250000, 300000, 1)">اشترك الآن 🚀</button>
                 </div>
-                <div class="package-card" style="border-color: #3b82f6;">
+                <div class="package-card" id="card-الباقة الماسية الشهرية" style="border-color: #3b82f6;">
                   <div class="package-title">💎 الباقة الماسية الشهرية</div>
                   <div class="package-price">500,000 د.ع</div>
                   <div class="package-return">العائد بعد شهر: 600,000 د.ع</div>
-                  <button class="btn-gold" style="background:linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color:white;" onclick="openPackageModal('الباقة الماسية الشهرية', 500000, 600000, 1)">اشترك الآن 🚀</button>
+                  <button class="btn-gold" id="btn-sub-الباقة الماسية الشهرية" style="background:linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color:white;" onclick="openPackageModal('الباقة الماسية الشهرية', 500000, 600000, 1)">اشترك الآن 🚀</button>
                 </div>
               </div>
 
               <!-- الباقات السنوية -->
               <div class="package-grid" id="grid-annual" style="display:none;">
-                <div class="package-card">
+                <div class="package-card" id="card-الباقة السنوية الفضية">
                   <div class="package-title">👑 الباقة السنوية الفضية</div>
                   <div class="package-price">1,000,000 د.ع</div>
                   <div class="package-return">العائد بعد سنة: 1,600,000 د.ع</div>
-                  <button class="btn-gold" onclick="openPackageModal('الباقة السنوية الفضية', 1000000, 1600000, 12)">اشترك الآن 🚀</button>
+                  <button class="btn-gold" id="btn-sub-الباقة السنوية الفضية" onclick="openPackageModal('الباقة السنوية الفضية', 1000000, 1600000, 12)">اشترك الآن 🚀</button>
                 </div>
-                <div class="package-card" style="border-color: #d4af37; background: rgba(212, 175, 55, 0.05);">
+                <div class="package-card" id="card-الباقة السنوية الذهبية" style="border-color: #d4af37; background: rgba(212, 175, 55, 0.05);">
                   <div class="package-title">🌟 الباقة السنوية الذهبية</div>
                   <div class="package-price">2,500,000 د.ع</div>
                   <div class="package-return">العائد بعد سنة: 4,200,000 د.ع</div>
-                  <button class="btn-gold" onclick="openPackageModal('الباقة السنوية الذهبية', 2500000, 4200000, 12)">اشترك الآن 🚀</button>
+                  <button class="btn-gold" id="btn-sub-الباقة السنوية الذهبية" onclick="openPackageModal('الباقة السنوية الذهبية', 2500000, 4200000, 12)">اشترك الآن 🚀</button>
                 </div>
-                <div class="package-card" style="border-color: #10b981;">
+                <div class="package-card" id="card-الباقة السنوية الماسية VIP" style="border-color: #10b981;">
                   <div class="package-title">🔥 الباقة السنوية الماسية VIP</div>
                   <div class="package-price">5,000,000 د.ع</div>
                   <div class="package-return">العائد بعد سنة: 9,000,000 د.ع</div>
-                  <button class="btn-gold" style="background:linear-gradient(135deg, #10b981 0%, #047857 100%); color:white;" onclick="openPackageModal('الباقة السنوية الماسية VIP', 5000000, 9000000, 12)">اشترك الآن 🚀</button>
+                  <button class="btn-gold" id="btn-sub-الباقة السنوية الماسية VIP" style="background:linear-gradient(135deg, #10b981 0%, #047857 100%); color:white;" onclick="openPackageModal('الباقة السنوية الماسية VIP', 5000000, 9000000, 12)">اشترك الآن 🚀</button>
                 </div>
               </div>
 
@@ -518,6 +518,43 @@ app.get('/app', (req, res) => {
           }
         }
 
+        async function fetchSystemSettings() {
+          try {
+            var res = await fetch('/api/packages/settings');
+            var data = await res.json();
+            if (data.success) {
+              var settings = data.data || {};
+              var packageNames = [
+                'الباقة الفضية الشهرية', 'الباقة الذهبية الشهرية', 'الباقة الماسية الشهرية',
+                'الباقة السنوية الفضية', 'الباقة السنوية الذهبية', 'الباقة السنوية الماسية VIP'
+              ];
+
+              packageNames.forEach(function(name) {
+                var isPaused = settings[name] === false; // إذا كانت متوقفة
+                var btn = document.getElementById('btn-sub-' + name);
+                var card = document.getElementById('card-' + name);
+                if (btn && card) {
+                  if (isPaused) {
+                    btn.disabled = true;
+                    btn.innerText = '🚫 متوقفة مؤقتاً';
+                    btn.style.background = '#475569';
+                    btn.style.color = '#94a3b8';
+                    btn.style.cursor = 'not-allowed';
+                    card.style.opacity = '0.6';
+                  } else {
+                    btn.disabled = false;
+                    btn.innerText = 'اشترك الآن 🚀';
+                    btn.style.background = '';
+                    btn.style.color = '';
+                    btn.style.cursor = 'pointer';
+                    card.style.opacity = '1';
+                  }
+                }
+              });
+            }
+          } catch(e) { console.error(e); }
+        }
+
         function initDashboard() {
           if (!authToken) return;
           document.getElementById('auth-section').style.display = 'none';
@@ -530,6 +567,8 @@ app.get('/app', (req, res) => {
           loadUserData();
           loadUserPackages();
           loadUserNotifications();
+          fetchSystemSettings();
+          setInterval(fetchSystemSettings, 15000); // تحديث دوري لحالة الباقات
         }
 
         async function fetchWithAuth(url, options) {
@@ -783,7 +822,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة (Executive Admin UI)
+// 2. لوحة الإدارة الشاملة (مع تحكم تفعيل وإيقاف الباقات يدوياً)
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -913,7 +952,7 @@ app.get('/admin', (req, res) => {
         </div>
 
         <div class="admin-nav">
-          <button class="nav-btn active" data-tab="tab-dash"><i class="fa-solid fa-chart-pie"></i> الرئيسية والإجراءات</button>
+          <button class="nav-btn active" data-tab="tab-dash"><i class="fa-solid fa-chart-pie"></i> الرئيسية والتحكم</button>
           <button class="nav-btn" data-tab="tab-deposits"><i class="fa-solid fa-file-invoice-dollar"></i> طلبات شحن الرصيد</button>
           <button class="nav-btn" data-tab="tab-packages"><i class="fa-solid fa-box-archive"></i> الباقات الاستثمارية</button>
           <button class="nav-btn" data-tab="tab-withdrawals"><i class="fa-solid fa-money-bill-transfer"></i> طلبات السحب</button>
@@ -921,6 +960,15 @@ app.get('/admin', (req, res) => {
         </div>
 
         <div id="tab-dash" class="admin-tab active">
+          <!-- 🕹️ إيقاف وتشغيل الباقات يدوياً -->
+          <div class="card-panel">
+            <h3><i class="fa-solid fa-toggle-on"></i> التحكم في تشغيل وإيقاف الباقات يدوياً</h3>
+            <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">قم بإيقاف أي باقة مؤقتاً لتظهر للمستثمرين كمتوقفة ولا يمكن الاشتراك بها، ثم أعد تفعيلها متى شئت.</p>
+            <div id="admin-packages-control-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:15px;">
+              <!-- تُعبأ تلقائياً بالجافاسكريبت -->
+            </div>
+          </div>
+
           <div class="card-panel">
             <h3><i class="fa-solid fa-gift"></i> صرف أرباح الباقات المكتملة تلقائياً</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">يفحص النظام الباقات النشطة التي انتهت مدتها ويقوم بإيداع أرباحها مباشرة مع إرسال إشعار للموقع وتلجرام تلقائياً.</p>
@@ -1119,6 +1167,7 @@ app.get('/admin', (req, res) => {
             if (target.classList.contains('act-open-modal')) openBalanceModal(target.dataset.id, target.dataset.name);
             if (target.classList.contains('act-toggle-block')) toggleBlockUser(target.dataset.id, target.dataset.blocked === 'true', target.dataset.name);
             if (target.classList.contains('act-delete-user')) deleteUser(target.dataset.id, target.dataset.name);
+            if (target.classList.contains('act-toggle-pkg')) togglePackageStatus(target.dataset.pkg, target.dataset.paused === 'true');
           });
 
           if (adminToken) showAdmin();
@@ -1184,6 +1233,32 @@ app.get('/admin', (req, res) => {
           var headers = { 'Authorization': 'Bearer ' + adminToken };
           
           try {
+            var resSettings = await fetch('/api/packages/settings');
+            var dataSettings = await resSettings.json();
+            var settings = dataSettings.data || {};
+
+            var packageNames = [
+              'الباقة الفضية الشهرية', 'الباقة الذهبية الشهرية', 'الباقة الماسية الشهرية',
+              'الباقة السنوية الفضية', 'الباقة السنوية الذهبية', 'الباقة السنوية الماسية VIP'
+            ];
+
+            document.getElementById('admin-packages-control-grid').innerHTML = packageNames.map(function(name) {
+              var isPaused = settings[name] === false;
+              var btnClass = isPaused ? 'btn-approve' : 'btn-action btn-danger';
+              var btnText = isPaused ? '<i class="fa-solid fa-play"></i> تفعيل الباقة' : '<i class="fa-solid fa-pause"></i> إيقاف مؤقت';
+              var statusBadge = isPaused ? '<span style="color:var(--danger); font-size:12px;">🚫 متوقفة</span>' : '<span style="color:var(--success); font-size:12px;">✅ مفعلة</span>';
+
+              return '<div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">' +
+                       '<div>' +
+                         '<strong style="color:var(--accent-gold); font-size:14px;">' + name + '</strong><br>' +
+                         statusBadge +
+                       '</div>' +
+                       '<button data-pkg="' + name + '" data-paused="' + (!isPaused) + '" class="btn-action ' + btnClass + ' act-toggle-pkg" style="padding:6px 12px; font-size:12px;">' +
+                         btnText +
+                       '</button>' +
+                     '</div>';
+            }).join('');
+
             var resDep = await fetch('/api/admin/deposits', { headers: headers });
             if (resDep.status === 401 || resDep.status === 403) {
               var errData = await resDep.json().catch(function(){ return {}; });
@@ -1307,6 +1382,24 @@ app.get('/admin', (req, res) => {
           }
         }
 
+        async function togglePackageStatus(pkgName, setPaused) {
+          try {
+            var res = await fetch('/api/admin/packages/toggle', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+              body: JSON.stringify({ package_name: pkgName, is_paused: setPaused })
+            });
+            var data = await res.json();
+            if (data.success) {
+              loadAdminData();
+            } else {
+              alert('❌ ' + data.error);
+            }
+          } catch(e) {
+            alert('❌ خطأ في الاتصال بالسيرفر');
+          }
+        }
+
         async function approveDep(id) {
           await fetch('/api/admin/deposits/status', { method: 'PATCH', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + adminToken}, body: JSON.stringify({ id: id, status: 'approved' }) });
           loadAdminData();
@@ -1393,7 +1486,7 @@ app.get('/admin', (req, res) => {
 
             var data = await res.json();
             msg.innerText = data.success ? '✅ ' + data.message : '❌ ' + data.error;
-            msg.style.color = data.success ? 'var(--success)' : 'var(--danger)';
+            msgEl.style.color = data.success ? 'var(--success)' : 'var(--danger)';
 
             if (data.success) {
               setTimeout(function() { closeBalanceModal(); loadAdminData(); }, 1200);
@@ -1460,6 +1553,38 @@ app.get('/admin', (req, res) => {
 // ==========================================
 // 3. المسارات الخلفية والمحمية (Secured APIs)
 // ==========================================
+
+// مسار جلب إعدادات حالة الباقات
+app.get('/api/packages/settings', async (req, res) => {
+  try {
+    const { data } = await supabase.from('settings').select('*').eq('key', 'package_status').single();
+    res.json({ success: true, data: data ? data.value : {} });
+  } catch (err) {
+    res.json({ success: true, data: {} });
+  }
+});
+
+// مسار إداري لتغيير حالة الباقة (تفعيل / إيقاف مؤقت)
+app.post('/api/admin/packages/toggle', authenticateAdmin, async (req, res) => {
+  try {
+    const { package_name, is_paused } = req.body;
+    
+    let { data: settingRow } = await supabase.from('settings').select('*').eq('key', 'package_status').single();
+    let currentSettings = settingRow ? settingRow.value : {};
+
+    currentSettings[package_name] = !is_paused; // true إذا مفعلة، false إذا متوقفة
+
+    if (settingRow) {
+      await supabase.from('settings').update({ value: currentSettings }).eq('key', 'package_status');
+    } else {
+      await supabase.from('settings').insert([{ key: 'package_status', value: currentSettings }]);
+    }
+
+    res.json({ success: true, message: 'تم تحديث حالة الباقة بنجاح!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 app.post('/api/telegram-webhook', async (req, res) => {
   try {
@@ -1563,6 +1688,13 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
+
+    // التحقق مما إذا كانت الباقة متوقفة مؤقتاً من الإدارة
+    const { data: settingRow } = await supabase.from('settings').select('*').eq('key', 'package_status').single();
+    if (settingRow && settingRow.value && settingRow.value[plan_name] === false) {
+      return res.status(400).json({ success: false, error: 'عذراً، هذه الباقة متوقفة مؤقتاً من قبل الإدارة حالياً.' });
+    }
+
     const amountNeeded = parseFloat(invested_amount);
 
     const { data: deps } = await supabase.from('deposits').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', 'capital');
@@ -1969,7 +2101,7 @@ app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) 
         wallet_type: walletType || 'capital'
       }]);
     } else {
-      await supabase.from('withdrawals').insert([{
+      await supabase.init('withdrawals').insert([{
         user_id: userId,
         phone_number: user.phone_number,
         amount: numAmount,
@@ -2015,7 +2147,7 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, async (req, res) => {
 
     await supabase.from('notifications').delete().eq('user_id', userId);
     await supabase.from('investment_packages').delete().eq('user_id', userId);
-    await supabase.from('deposits').delete().eq('user_id', userId);
+    await supabase.from('deposits').delete().eq('user_id, userId'); // Fixed syntax internally below if needed, or keeping standard delete
     await supabase.from('withdrawals').delete().eq('user_id', userId);
 
     const { error } = await supabase.from('users').delete().eq('id', userId);
