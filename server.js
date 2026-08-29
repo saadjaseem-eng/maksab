@@ -197,7 +197,7 @@ app.get('/app', (req, res) => {
         * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; transition: all 0.3s ease; }
         body { background: var(--bg-color); color: var(--text-main); margin: 0; padding: 20px; min-height: 100vh; }
         .container { max-width: 900px; margin: 0 auto; }
-        .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: rgba(30, 41, 59, 0.8); padding: 15px 20px; border-radius: 15px; border: 1px solid rgba(212, 175, 55, 0.2); position: relative; }
+        .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: rgba(30, 41, 59, 0.8); padding: 15px 20px; border-radius: 15px; border: 1px solid rgba(212, 175, 55, 0.2); position: relative; flex-wrap: wrap; gap: 10px; }
         .auth-card { background: var(--card-bg); padding: 35px 25px; border-radius: 20px; max-width: 400px; margin: 40px auto; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         .input-group { position: relative; margin-bottom: 15px; }
         .input-group i { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
@@ -252,6 +252,9 @@ app.get('/app', (req, res) => {
         <div id="auth-section" class="auth-card">
           <i class="fa-solid fa-shield-halved" style="font-size: 40px; color: var(--accent-gold); margin-bottom: 15px;"></i>
           <h2 id="auth-title">تسجيل الدخول المشفر</h2>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px;">
+            إدارة المنصة: المدير التنفيذي <strong style="color: var(--accent-gold);">${EXECUTIVE_DIRECTOR}</strong>
+          </div>
 
           <div id="ref-alert-box" style="display:none; background:rgba(212,175,55,0.1); border:1px dashed var(--accent-gold); color:var(--accent-gold); padding:10px; border-radius:10px; font-size:12px; margin-bottom:15px;">
             <i class="fa-solid fa-user-check"></i> تسجيل عبر دعوة <input type="hidden" id="ref-code-input">
@@ -281,6 +284,9 @@ app.get('/app', (req, res) => {
             <div>
               <strong style="color:var(--accent-gold);"><span id="user-name"></span></strong>
               <div style="font-size:11px; color:var(--text-muted);" id="kyc-badge-status">غير موثق</div>
+              <div style="font-size: 11px; color: var(--accent-gold); margin-top: 2px;">
+                <i class="fa-solid fa-circle-check"></i> المدير التنفيذي: <strong>${EXECUTIVE_DIRECTOR}</strong>
+              </div>
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
