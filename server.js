@@ -177,6 +177,29 @@ const requireSuperAdmin = (req, res, next) => {
   next();
 };
 
+// طبقة الحماية المزدوجة (HTTP Basic Auth للمسار السري)
+const executiveShieldAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Secure Executive Portal"');
+    return res.status(401).send('Authentication required.');
+  }
+
+  const base64Credentials = authHeader.split(' ')[1];
+  const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
+  const [username, password] = credentials.split(':');
+
+  const secureAdminUser = process.env.SECURE_ADMIN_USER || 'executive';
+  const secureAdminPass = process.env.SECURE_ADMIN_PASS || 'maksab2026sec';
+
+  if (username === secureAdminUser && password === secureAdminPass) {
+    next();
+  } else {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Secure Executive Portal"');
+    return res.status(401).send('Invalid credentials.');
+  }
+};
+
 // ==========================================
 // 1. واجهة المستثمر الشاملة
 // ==========================================
@@ -860,9 +883,9 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة بنظام الصلاحيات الثنائي (Executive Admin UI)
+// 2. لوحة الإدارة الشاملة (المسار المخفي والمحمي بحماية مزدوجة)
 // ==========================================
-app.get('/admin', (req, res) => {
+app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
@@ -910,7 +933,6 @@ app.get('/admin', (req, res) => {
         .nav-btn { flex: 1; padding: 12px 18px; border: none; background: transparent; color: var(--text-muted); font-weight: bold; font-size: 13px; border-radius: 10px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; }
         .nav-btn.active { background: #0f172a; color: var(--accent-gold); border: 1px solid rgba(212, 175, 55, 0.3); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 
-        /* علامة التنبيه الحمراء النابضة للأدمن */
         .admin-pulse-dot { position: absolute; top: 8px; right: 12px; width: 10px; height: 10px; background-color: var(--danger); border-radius: 50%; box-shadow: 0 0 0 0 rgba(239, 68, 68, 1); animation: adminPulse 1.5s infinite; display: none; }
         @keyframes adminPulse { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
 
@@ -967,7 +989,6 @@ app.get('/admin', (req, res) => {
           </div>
         </div>
 
-        <!-- تنبيه حي بالطلبات المعلقة -->
         <div id="admin-live-alert-banner" style="display:none; background:rgba(239, 68, 68, 0.15); border:1px solid var(--danger); padding:12px 20px; border-radius:14px; margin-bottom:20px; align-items:center; justify-content:space-between; animation: pulse 2s infinite;">
           <div style="display:flex; align-items:center; gap:10px; color:var(--danger); font-weight:bold; font-size:14px;">
             <i class="fa-solid fa-triangle-exclamation" style="font-size:18px;"></i>
@@ -1015,7 +1036,6 @@ app.get('/admin', (req, res) => {
         </div>
 
         <div id="tab-dash" class="admin-tab active">
-          <!-- 🕹️ إيقاف وتشغيل الباقات يدوياً (للمدير الرئيسي فقط) -->
           <div class="card-panel" id="super-admin-section">
             <h3><i class="fa-solid fa-toggle-on"></i> التحكم في تشغيل وإيقاف الباقات يدوياً (صلاحية المدير الرئيسي)</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">قم بإيقاف أي باقة مؤقتاً لتظهر للمستثمرين كمتوقفة ولا يمكن الاشتراك بها، ثم أعد تفعيلها متى شئت.</p>
@@ -1031,7 +1051,6 @@ app.get('/admin', (req, res) => {
             </div>
           </div>
 
-          <!-- 📢 بطاقة الإعلانات الجماعية (Broadcast) -->
           <div class="card-panel">
             <h3><i class="fa-solid fa-bullhorn"></i> إرسال إعلان عام / تحديث لجميع المستثمرين (Broadcast)</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">أرسل تنبيهاً عن باقة جديدة، تحديث في المنصة، أو تنبيه عام لجميع المستثمرين عبر تلجرام وجرس الإشعارات بالموقع بضغطة زر.</p>
@@ -1226,7 +1245,7 @@ app.get('/admin', (req, res) => {
 
           if (adminToken) {
             showAdmin();
-            setInterval(loadAdminData, 6000); // تحديث تلقائي كل 6 ثوانٍ للتحقق من أي طلبات جديدة
+            setInterval(loadAdminData, 6000);
           }
         });
 
@@ -1353,7 +1372,6 @@ app.get('/admin', (req, res) => {
             var dataU = await resU.json();
             var users = dataU.data || [];
 
-            // 🔴 فحص الطلبات المعلقة وإظهار العلامات والنقاط الحمراء النابضة للادمن تلقائياً
             var pendingDepositsCount = deposits.filter(function(d) { return d.status === 'pending'; }).length;
             var pendingWithdrawalsCount = withdrawals.filter(function(w) { return w.status === 'pending'; }).length;
             var pendingPackagesCount = packages.filter(function(p) { return p.status === 'pending'; }).length;
