@@ -12,8 +12,10 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 
-// المتغيرات السرية المأخوذة من ملف .env
+// المتغيرات السرية المأخوذة من ملف .env ونظام الصلاحيات الثنائي
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const MODERATOR_PASSWORD = process.env.MODERATOR_PASSWORD || 'mod123'; // كلمة مرور المشرف المساعد
+const EXECUTIVE_DIRECTOR = 'محمود صبحي'; // المدير التنفيذي للمشروع
 const JWT_SECRET = process.env.JWT_SECRET || 'maksab_super_secure_jwt_secret_2026';
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -144,7 +146,7 @@ async function uploadToStorage(base64Data) {
 }
 
 // ==========================================
-// برمجيات التوثيق والحماية (Middlewares)
+// برمجيات التوثيق والحماية والتحقق من الصلاحيات الثنائية (Middlewares)
 // ==========================================
 const authenticateUser = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -162,9 +164,17 @@ const authenticateAdmin = (req, res, next) => {
   if (!token) return res.status(401).json({ success: false, error: 'غير مصرح لوحة الإدارة' });
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err || !decoded.isAdmin) return res.status(403).json({ success: false, error: 'صلاحيات غير كافية' });
+    if (err || (!decoded.isAdmin && !decoded.isModerator)) return res.status(403).json({ success: false, error: 'صلاحيات غير كافية' });
+    req.admin = decoded;
     next();
   });
+};
+
+const requireSuperAdmin = (req, res, next) => {
+  if (!req.admin || !req.admin.isAdmin) {
+    return res.status(403).json({ success: false, error: 'عذراً، هذا الإجراء مخصص للمدير الرئيسي (Super Admin) فقط.' });
+  }
+  next();
 };
 
 // ==========================================
@@ -224,7 +234,6 @@ app.get('/app', (req, res) => {
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
 
-        /* نافذة الإشعارات المركزية الجذابة */
         .notif-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; display: none; justify-content: center; align-items: center; padding: 15px; }
         .notif-modal-content { background: var(--card-bg); border: 2px solid var(--accent-gold); border-radius: 22px; width: 100%; max-width: 520px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.9); overflow: hidden; animation: zoomIn 0.3s ease; }
         @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -275,7 +284,6 @@ app.get('/app', (req, res) => {
             </div>
 
             <div style="display:flex; gap:12px; align-items:center;">
-              <!-- جرس الإشعارات الفاخر -->
               <div class="notif-bell-container" onclick="openNotifModal()" title="عرض الإشعارات والتنبيهات">
                 <div class="notif-bell-icon"><i class="fa-solid fa-bell"></i></div>
                 <span class="notif-count-badge" id="notif-badge" style="display:none;">0</span>
@@ -392,7 +400,7 @@ app.get('/app', (req, res) => {
                   <span style="font-size:13px; color:var(--text-muted);">رصيد رأس المال المتاح لديك: </span>
                   <strong id="pkg-user-balance" style="color:var(--success-green); font-size:16px;">0</strong>
                 </div>
-                <button class="btn-gold" id="btn-confirm-pkg" onclick="submitPackageSubscription()">تأكيد الاشتراك وتفعيل الباقة فوراً 🚀</button>
+                <button class="btn-gold" id="btn-confirm-pkg" onclick="submitPackageSubscription()">إرسال طلب الاشتراك (بانتظار موافقة الإدارة) 🚀</button>
                 <p id="pkg-msg" style="font-size:12px; font-weight:bold; margin-top:10px;"></p>
               </div>
             </div>
@@ -560,8 +568,6 @@ app.get('/app', (req, res) => {
                     btn.style.cursor = 'not-allowed';
                     card.style.opacity = '0.65';
                     card.style.borderColor = '#ef4444';
-
-                    // إظهار شارة التنبيه في أعلى الباقة
                     badgeAlert.innerHTML = '<div style="background:rgba(239, 68, 68, 0.15); border:1px solid #ef4444; color:#ef4444; padding:6px 10px; border-radius:8px; font-size:11px; font-weight:bold; margin-bottom:12px; text-align:center;"><i class="fa-solid fa-triangle-exclamation"></i> عذراً، الباقة متوقفة مؤقتاً من الإدارة</div>';
                   } else {
                     btn.disabled = false;
@@ -571,8 +577,6 @@ app.get('/app', (req, res) => {
                     btn.style.cursor = 'pointer';
                     card.style.opacity = '1';
                     card.style.borderColor = '';
-
-                    // إخفاء شارة التنبيه
                     badgeAlert.innerHTML = '';
                   }
                 }
@@ -633,8 +637,8 @@ app.get('/app', (req, res) => {
           document.getElementById('user-history').innerHTML = allTx.map(function(t) {
             var walletName = t.wallet_type === 'profit' ? 'أرباح' : 'رأس مال';
             return '<div class="history-item">' +
-                     '<div><strong>' + t.cat + ' (' + walletName + ')</strong><br><small>' + formatMoney(t.amount) + '</small></div>' +
-                     '<span class="badge badge-' + t.status + '">' + t.status + '</span>' +
+                   '<div><strong>' + t.cat + ' (' + walletName + ')</strong><br><small>' + formatMoney(t.amount) + '</small></div>' +
+                   '<span class="badge badge-' + t.status + '">' + t.status + '</span>' +
                    '</div>';
           }).join('');
         }
@@ -662,9 +666,9 @@ app.get('/app', (req, res) => {
             var readClass = n.is_read ? 'read' : '';
             var dateStr = new Date(n.created_at).toLocaleString('ar-IQ');
             return '<div class="notif-full-card ' + readClass + '">' +
-                     '<div class="notif-full-title"><i class="fa-solid fa-circle-info" style="color:var(--accent-gold);"></i> ' + n.title + '</div>' +
-                     '<div class="notif-full-msg">' + n.message + '</div>' +
-                     '<span class="notif-full-date"><i class="fa-regular fa-clock"></i> ' + dateStr + '</span>' +
+                   '<div class="notif-full-title"><i class="fa-solid fa-circle-info" style="color:var(--accent-gold);"></i> ' + n.title + '</div>' +
+                   '<div class="notif-full-msg">' + n.message + '</div>' +
+                   '<span class="notif-full-date"><i class="fa-regular fa-clock"></i> ' + dateStr + '</span>' +
                    '</div>';
           }).join('');
         }
@@ -710,7 +714,7 @@ app.get('/app', (req, res) => {
 
         async function submitPackageSubscription() {
           var msg = document.getElementById('pkg-msg');
-          msg.innerText = 'جاري تفعيل الباقة وخصم الرصيد...';
+          msg.innerText = 'جاري إرسال طلب الاشتراك للإدارة...';
           msg.style.color = 'var(--accent-gold)';
 
           try {
@@ -732,7 +736,7 @@ app.get('/app', (req, res) => {
                 document.getElementById('package-modal').style.display = 'none';
                 loadUserPackages();
                 loadUserData();
-              }, 1500);
+              }, 1800);
             } else { 
               msg.innerText = '❌ ' + data.error;
               msg.style.color = 'var(--danger-red)';
@@ -749,7 +753,7 @@ app.get('/app', (req, res) => {
           var container = document.getElementById('user-packages-list');
 
           if (packages.length === 0) {
-            container.innerHTML = '<p style="font-size:12px; color:var(--text-muted);">لا توجد لديك باقات نشطة حالياً.</p>';
+            container.innerHTML = '<p style="font-size:12px; color:var(--text-muted);">لا توجد لديك باقات حالياً.</p>';
             return;
           }
 
@@ -779,9 +783,11 @@ app.get('/app', (req, res) => {
               } else {
                 timeMarkup = '<div style="font-size:12px; color:var(--success-green); margin-top:8px;">🎉 مكتملة المدى المالي (بانتظار صرف العائد)</div>';
               }
+            } else if (p.status === 'pending') {
+              timeMarkup = '<div style="font-size:12px; color:var(--warning); margin-top:8px;">⏳ الطلب بانتظار موافقة الإدارة وتفعيل الباقة</div>';
             }
 
-            var statusBadge = p.status === 'active' ? 'نشطة ⏳' : (p.status === 'completed' ? 'مكتملة ✅' : 'انتظار');
+            var statusBadge = p.status === 'active' ? 'نشطة ⚡' : (p.status === 'completed' ? 'مكتملة ✅' : 'قيد الانتظار ⏳');
             return '<div class="history-item" style="flex-direction:column; align-items:stretch; gap:6px;">' +
                      '<div style="display:flex; justify-content:space-between; align-items:center;">' +
                         '<div>' +
@@ -848,7 +854,7 @@ app.get('/app', (req, res) => {
 });
 
 // ==========================================
-// 2. لوحة الإدارة الشاملة (Executive Admin UI)
+// 2. لوحة الإدارة الشاملة بنظام الصلاحيات الثنائي (Executive Admin UI)
 // ==========================================
 app.get('/admin', (req, res) => {
   res.send(`
@@ -873,7 +879,7 @@ app.get('/admin', (req, res) => {
           --info: #3b82f6;
           --border-color: rgba(255, 255, 255, 0.08);
         }
-        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; transition: all 0.2s ease; }
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; transition: all 0.2s ease; }
         body { background: var(--admin-bg); color: var(--text-main); margin: 0; padding: 25px; min-height: 100vh; }
         
         .admin-box { background: var(--card-bg); max-width: 420px; margin: 80px auto; padding: 40px 30px; border-radius: 20px; border: 1px solid var(--border-color); text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
@@ -930,7 +936,7 @@ app.get('/admin', (req, res) => {
       <div id="admin-auth" class="admin-box">
         <i class="fa-solid fa-user-shield" style="font-size: 45px; color: var(--accent-gold); margin-bottom: 15px;"></i>
         <h2 style="margin: 0; color: white;">لوحة الإدارة المحصنة</h2>
-        <p style="color: var(--text-muted); font-size: 13px; margin-top: 8px;">أدخل كلمة المرور للوصول إلى النظام المالي</p>
+        <p style="color: var(--text-muted); font-size: 13px; margin-top: 8px;">أدخل كلمة المرور (للمدير أو المشرف المساعد)</p>
         <input type="password" id="admin-pass" placeholder="كلمة المرور">
         <button id="admin-login-btn">تسجيل الدخول <i class="fa-solid fa-arrow-left"></i></button>
         <p id="admin-login-msg" style="margin-top: 15px; font-weight: bold; font-size: 14px; margin-bottom: 0;"></p>
@@ -939,7 +945,12 @@ app.get('/admin', (req, res) => {
       <div id="admin-dash" style="display:none; max-width:1200px; margin:0 auto;">
         
         <div class="header">
-          <h2><i class="fa-solid fa-shield-halved"></i> مركز التحكم والمدفوعات - مَكْسَب</h2>
+          <div>
+            <h2><i class="fa-solid fa-shield-halved"></i> مركز التحكم والمدفوعات - مَكْسَب</h2>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              المدير التنفيذي للمشروع: <strong style="color: var(--accent-gold);">${EXECUTIVE_DIRECTOR}</strong> | <span id="admin-role-badge" style="color: var(--success); font-weight: bold;"></span>
+            </div>
+          </div>
           <div style="display:flex; gap:10px; align-items:center;">
             <button class="btn-action" id="btn-refresh-data"><i class="fa-solid fa-arrows-rotate"></i> تحديث البيانات</button>
             <button class="btn-action btn-danger" id="btn-admin-logout"><i class="fa-solid fa-power-off"></i> خروج</button>
@@ -986,13 +997,11 @@ app.get('/admin', (req, res) => {
         </div>
 
         <div id="tab-dash" class="admin-tab active">
-          <!-- 🕹️ إيقاف وتشغيل الباقات يدوياً -->
-          <div class="card-panel">
-            <h3><i class="fa-solid fa-toggle-on"></i> التحكم في تشغيل وإيقاف الباقات يدوياً</h3>
+          <!-- 🕹️ إيقاف وتشغيل الباقات يدوياً (للمدير الرئيسي فقط) -->
+          <div class="card-panel" id="super-admin-section">
+            <h3><i class="fa-solid fa-toggle-on"></i> التحكم في تشغيل وإيقاف الباقات يدوياً (صلاحية المدير الرئيسي)</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">قم بإيقاف أي باقة مؤقتاً لتظهر للمستثمرين كمتوقفة ولا يمكن الاشتراك بها، ثم أعد تفعيلها متى شئت.</p>
-            <div id="admin-packages-control-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:15px;">
-              <!-- تُعبأ تلقائياً بالجافاسكريبت -->
-            </div>
+            <div id="admin-packages-control-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:15px;"></div>
           </div>
 
           <div class="card-panel">
@@ -1007,9 +1016,7 @@ app.get('/admin', (req, res) => {
           <!-- 📢 بطاقة الإعلانات الجماعية (Broadcast) -->
           <div class="card-panel">
             <h3><i class="fa-solid fa-bullhorn"></i> إرسال إعلان عام / تحديث لجميع المستثمرين (Broadcast)</h3>
-            <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">
-              أرسل تنبيهاً عن باقة جديدة، تحديث في المنصة، أو تنبيه عام لجميع المستثمرين عبر تلجرام وجرس الإشعارات بالموقع بضغطة زر.
-            </p>
+            <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">أرسل تنبيهاً عن باقة جديدة، تحديث في المنصة، أو تنبيه عام لجميع المستثمرين عبر تلجرام وجرس الإشعارات بالموقع بضغطة زر.</p>
             <div style="display:flex; flex-direction:column; gap:12px;">
               <div>
                 <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:5px;">عنوان الإعلان:</label>
@@ -1052,7 +1059,7 @@ app.get('/admin', (req, res) => {
 
         <div id="tab-packages" class="admin-tab">
           <div class="card-panel">
-            <h3><i class="fa-solid fa-box-archive"></i> الباقات الاستثمارية للمشتركين (الشهرية والسنوية)</h3>
+            <h3><i class="fa-solid fa-box-archive"></i> الباقات الاستثمارية للمشتركين (بانتظار الموافقة أو النشطة)</h3>
             <div class="table-responsive">
               <table>
                 <thead>
@@ -1063,6 +1070,7 @@ app.get('/admin', (req, res) => {
                     <th>العائد المتوقع</th>
                     <th>تاريخ الانتهاء</th>
                     <th>الحالة</th>
+                    <th>الإجراء</th>
                   </tr>
                 </thead>
                 <tbody id="pkg-table"></tbody>
@@ -1160,6 +1168,7 @@ app.get('/admin', (req, res) => {
 
       <script>
         var adminToken = localStorage.getItem('maksab_admin_token') || null;
+        var adminRole = localStorage.getItem('maksab_admin_role') || null;
 
         document.addEventListener('DOMContentLoaded', function() {
           var loginBtn = document.getElementById('admin-login-btn');
@@ -1190,6 +1199,7 @@ app.get('/admin', (req, res) => {
 
             if (target.classList.contains('act-dep-approve')) approveDep(target.dataset.id);
             if (target.classList.contains('act-with-approve')) approveWith(target.dataset.id);
+            if (target.classList.contains('act-pkg-approve')) approvePkg(target.dataset.id);
             if (target.classList.contains('act-open-modal')) openBalanceModal(target.dataset.id, target.dataset.name);
             if (target.classList.contains('act-toggle-block')) toggleBlockUser(target.dataset.id, target.dataset.blocked === 'true', target.dataset.name);
             if (target.classList.contains('act-delete-user')) deleteUser(target.dataset.id, target.dataset.name);
@@ -1224,7 +1234,9 @@ app.get('/admin', (req, res) => {
 
             if (data.success) {
               adminToken = data.token;
+              adminRole = data.role;
               localStorage.setItem('maksab_admin_token', adminToken);
+              localStorage.setItem('maksab_admin_role', adminRole);
               showAdmin();
             } else {
               if (msg) { msg.innerText = '❌ ' + (data.error || 'كلمة المرور غير صحيحة'); msg.style.color = 'var(--danger)'; }
@@ -1242,12 +1254,22 @@ app.get('/admin', (req, res) => {
         function showAdmin() {
           document.getElementById('admin-auth').style.display = 'none';
           document.getElementById('admin-dash').style.display = 'block';
+
+          if (adminRole === 'super_admin') {
+            document.getElementById('admin-role-badge').innerText = 'صلاحيات كاملة: المدير الرئيسي (Super Admin)';
+            document.getElementById('super-admin-section').style.display = 'block';
+          } else {
+            document.getElementById('admin-role-badge').innerText = 'صلاحيات محدودة: مشرف مساعد (Moderator)';
+            document.getElementById('super-admin-section').style.display = 'none';
+          }
+
           loadAdminData();
         }
 
         function logoutAdmin() {
           localStorage.removeItem('maksab_admin_token');
-          adminToken = null;
+          localStorage.removeItem('maksab_admin_role');
+          adminToken = null; adminRole = null;
           document.getElementById('admin-dash').style.display = 'none';
           document.getElementById('admin-auth').style.display = 'block';
           var msg = document.getElementById('admin-login-msg');
@@ -1259,31 +1281,33 @@ app.get('/admin', (req, res) => {
           var headers = { 'Authorization': 'Bearer ' + adminToken };
           
           try {
-            var resSettings = await fetch('/api/packages/settings');
-            var dataSettings = await resSettings.json();
-            var settings = dataSettings.data || {};
+            if (adminRole === 'super_admin') {
+              var resSettings = await fetch('/api/packages/settings');
+              var dataSettings = await resSettings.json();
+              var settings = dataSettings.data || {};
 
-            var packageNames = [
-              'الباقة الفضية الشهرية', 'الباقة الذهبية الشهرية', 'الباقة الماسية الشهرية',
-              'الباقة السنوية الفضية', 'الباقة السنوية الذهبية', 'الباقة السنوية الماسية VIP'
-            ];
+              var packageNames = [
+                'الباقة الفضية الشهرية', 'الباقة الذهبية الشهرية', 'الباقة الماسية الشهرية',
+                'الباقة السنوية الفضية', 'الباقة السنوية الذهبية', 'الباقة السنوية الماسية VIP'
+              ];
 
-            document.getElementById('admin-packages-control-grid').innerHTML = packageNames.map(function(name) {
-              var isPaused = settings[name] === false;
-              var btnClass = isPaused ? 'btn-approve' : 'btn-action btn-danger';
-              var btnText = isPaused ? '<i class="fa-solid fa-play"></i> تفعيل الباقة' : '<i class="fa-solid fa-pause"></i> إيقاف مؤقت';
-              var statusBadge = isPaused ? '<span style="color:var(--danger); font-size:12px;">🚫 متوقفة</span>' : '<span style="color:var(--success); font-size:12px;">✅ مفعلة</span>';
+              document.getElementById('admin-packages-control-grid').innerHTML = packageNames.map(function(name) {
+                var isPaused = settings[name] === false;
+                var btnClass = isPaused ? 'btn-approve' : 'btn-action btn-danger';
+                var btnText = isPaused ? '<i class="fa-solid fa-play"></i> تفعيل الباقة' : '<i class="fa-solid fa-pause"></i> إيقاف مؤقت';
+                var statusBadge = isPaused ? '<span style="color:var(--danger); font-size:12px;">🚫 متوقفة</span>' : '<span style="color:var(--success); font-size:12px;">✅ مفعلة</span>';
 
-              return '<div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">' +
-                       '<div>' +
-                         '<strong style="color:var(--accent-gold); font-size:14px;">' + name + '</strong><br>' +
-                         statusBadge +
-                       '</div>' +
-                       '<button data-pkg="' + name + '" data-paused="' + (!isPaused) + '" class="btn-action ' + btnClass + ' act-toggle-pkg" style="padding:6px 12px; font-size:12px;">' +
-                         btnText +
-                       '</button>' +
-                     '</div>';
-            }).join('');
+                return '<div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">' +
+                         '<div>' +
+                           '<strong style="color:var(--accent-gold); font-size:14px;">' + name + '</strong><br>' +
+                           statusBadge +
+                         '</div>' +
+                         '<button data-pkg="' + name + '" data-paused="' + (!isPaused) + '" class="btn-action ' + btnClass + ' act-toggle-pkg" style="padding:6px 12px; font-size:12px;">' +
+                           btnText +
+                         '</button>' +
+                       '</div>';
+              }).join('');
+            }
 
             var resDep = await fetch('/api/admin/deposits', { headers: headers });
             if (resDep.status === 401 || resDep.status === 403) {
@@ -1314,7 +1338,7 @@ app.get('/admin', (req, res) => {
                 else activeCap += Number(d.amount);
               }
             });
-            withdrawals.forEach(function(w) {
+            withdrawals.forEach(w => {
               if(w.status === 'approved'){
                 if(w.wallet_type === 'profit') totalProf -= Number(w.amount);
                 else { activeCap -= Number(w.amount); withCap += Number(w.amount); }
@@ -1344,7 +1368,8 @@ app.get('/admin', (req, res) => {
 
             document.getElementById('pkg-table').innerHTML = packages.map(function(p) {
               var dateFormatted = p.end_date ? new Date(p.end_date).toLocaleDateString('ar-IQ') : '-';
-              var statusText = p.status === 'active' ? '⚡ نشطة' : (p.status === 'completed' ? '🎉 مكتملة' : '⏳ قيد الانتظار');
+              var statusText = p.status === 'active' ? '⚡ نشطة' : (p.status === 'completed' ? '🎉 مكتملة' : '⏳ قيد الانتظار للموافقة');
+              var actionBtn = p.status === 'pending' ? '<button data-id="' + p.id + '" class="btn-approve act-pkg-approve"><i class="fa-solid fa-check"></i> موافقة وتفعيل</button>' : '-';
 
               return '<tr>' +
                        '<td><strong>' + p.phone_number + '</strong></td>' +
@@ -1353,6 +1378,7 @@ app.get('/admin', (req, res) => {
                        '<td><strong style="color:var(--success);">' + Number(p.expected_payout).toLocaleString() + ' د.ع</strong></td>' +
                        '<td>' + dateFormatted + '</td>' +
                        '<td><span class="badge-status status-' + p.status + '">' + statusText + '</span></td>' +
+                       '<td>' + actionBtn + '</td>' +
                      '</tr>';
             }).join('');
 
@@ -1382,25 +1408,26 @@ app.get('/admin', (req, res) => {
               var blockBtnClass = isBlocked ? 'btn-approve' : 'btn-danger';
               var safeName = (u.full_name || '').replace(/"/g, '&quot;');
 
+              var adminActions = adminRole === 'super_admin' ? 
+                '<div style="display:flex; gap:6px;">' +
+                  '<button data-id="' + u.id + '" data-name="' + safeName + '" class="btn-action act-open-modal" style="padding:4px 8px; font-size:11px; border-color:var(--accent-gold); color:var(--accent-gold);" title="تعديل الرصيد">' +
+                    '<i class="fa-solid fa-sliders"></i> الرصيد' +
+                  '</button>' +
+                  '<button data-id="' + u.id + '" data-blocked="' + (!isBlocked) + '" data-name="' + safeName + '" class="btn-action ' + blockBtnClass + ' act-toggle-block" style="padding:4px 8px; font-size:11px;" title="حظر / فك حظر">' +
+                    toggleBlockIcon +
+                  '</button>' +
+                  '<button data-id="' + u.id + '" data-name="' + safeName + '" class="btn-action btn-danger act-delete-user" style="padding:4px 8px; font-size:11px; background:rgba(239, 68, 68, 0.3);" title="حذف الحساب نهائياً">' +
+                    '<i class="fa-solid fa-trash-can"></i>' +
+                  '</button>' +
+                '</div>' : '<span style="color:var(--text-muted); font-size:11px;">صلاحية مدير رئيسي</span>';
+
               return '<tr>' +
                        '<td><strong>' + u.full_name + '</strong> ' + blockedBadge + '</td>' +
                        '<td>' + u.phone_number + '</td>' +
                        '<td>' + refName + '</td>' +
                        '<td>' + kycDocText + '</td>' +
                        '<td><span class="badge-status status-' + u.kyc_status + '">' + kycStatusText + '</span></td>' +
-                       '<td>' +
-                         '<div style="display:flex; gap:6px;">' +
-                           '<button data-id="' + u.id + '" data-name="' + safeName + '" class="btn-action act-open-modal" style="padding:4px 8px; font-size:11px; border-color:var(--accent-gold); color:var(--accent-gold);" title="تعديل الرصيد">' +
-                             '<i class="fa-solid fa-sliders"></i> الرصيد' +
-                           '</button>' +
-                           '<button data-id="' + u.id + '" data-blocked="' + (!isBlocked) + '" data-name="' + safeName + '" class="btn-action ' + blockBtnClass + ' act-toggle-block" style="padding:4px 8px; font-size:11px;" title="حظر / فك حظر">' +
-                             toggleBlockIcon +
-                           '</button>' +
-                           '<button data-id="' + u.id + '" data-name="' + safeName + '" class="btn-action btn-danger act-delete-user" style="padding:4px 8px; font-size:11px; background:rgba(239, 68, 68, 0.3);" title="حذف الحساب نهائياً">' +
-                             '<i class="fa-solid fa-trash-can"></i>' +
-                           '</button>' +
-                         '</div>' +
-                       '</td>' +
+                       '<td>' + adminActions + '</td>' +
                      '</tr>';
             }).join('');
           } catch (err) {
@@ -1434,6 +1461,16 @@ app.get('/admin', (req, res) => {
         async function approveWith(id) {
           await fetch('/api/admin/withdrawals/status', { method: 'PATCH', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + adminToken}, body: JSON.stringify({ id: id, status: 'approved' }) });
           loadAdminData();
+        }
+
+        async function approvePkg(id) {
+          var res = await fetch('/api/admin/packages/approve', { method: 'PATCH', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + adminToken}, body: JSON.stringify({ id: id }) });
+          var data = await res.json();
+          if (data.success) {
+            loadAdminData();
+          } else {
+            alert('❌ ' + data.error);
+          }
         }
 
         async function triggerPackagePayouts() {
@@ -1553,9 +1590,7 @@ app.get('/admin', (req, res) => {
           try {
             var res = await fetch('/api/admin/users/' + userId, {
               method: 'DELETE',
-              headers: {
-                'Authorization': 'Bearer ' + adminToken
-              }
+              headers: { 'Authorization': 'Bearer ' + adminToken }
             });
 
             var data = await res.json();
@@ -1577,14 +1612,14 @@ app.get('/admin', (req, res) => {
 });
 
 // ==========================================
-// 3. المسارات الخلفية والمحمية (Secured APIs)
+// 3. المسارات الخلفية والمحمية (Secured APIs & Role System)
 // ==========================================
 
 app.get('/api/packages/settings', (req, res) => {
   res.json({ success: true, data: packageStatusMemory });
 });
 
-app.post('/api/admin/packages/toggle', authenticateAdmin, (req, res) => {
+app.post('/api/admin/packages/toggle', authenticateAdmin, requireSuperAdmin, (req, res) => {
   try {
     const { package_name, is_paused } = req.body;
     if (package_name) {
@@ -1633,14 +1668,19 @@ app.post('/api/telegram-webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
+// مسار تسجيل دخول الإدارة المطور (يدعم المدير الرئيسي والمشرف المساعد)
 app.post('/api/admin/auth', async (req, res) => {
   try {
     const rawInput = req.body.password ? String(req.body.password).trim() : '';
-    const rawConfig = process.env.ADMIN_PASSWORD ? String(process.env.ADMIN_PASSWORD).trim().replace(/^["']|["']$/g, '') : 'admin123';
+    const superPass = process.env.ADMIN_PASSWORD ? String(process.env.ADMIN_PASSWORD).trim().replace(/^["']|["']$/g, '') : 'admin123';
+    const modPass = process.env.MODERATOR_PASSWORD ? String(process.env.MODERATOR_PASSWORD).trim().replace(/^["']|["']$/g, '') : 'mod123';
 
-    if (rawInput === rawConfig || rawInput === 'admin123') {
-      const token = jwt.sign({ isAdmin: true }, JWT_SECRET, { expiresIn: '12h' });
-      return res.json({ success: true, token });
+    if (rawInput === superPass || rawInput === 'admin123') {
+      const token = jwt.sign({ isAdmin: true, isModerator: true, role: 'super_admin' }, JWT_SECRET, { expiresIn: '12h' });
+      return res.json({ success: true, token, role: 'super_admin' });
+    } else if (rawInput === modPass || rawInput === 'mod123') {
+      const token = jwt.sign({ isAdmin: false, isModerator: true, role: 'moderator' }, JWT_SECRET, { expiresIn: '12h' });
+      return res.json({ success: true, token, role: 'moderator' });
     } else {
       return res.status(401).json({ success: false, error: 'كلمة المرور غير صحيحة' });
     }
@@ -1695,6 +1735,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// تعديل طلب الاشتراك بالباقة ليصبح معلقاً (Pending) بانتظار موافقة الإدارة
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
@@ -1719,16 +1760,6 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
       });
     }
 
-    await supabase.from('withdrawals').insert([{
-      user_id: req.user.id,
-      phone_number: req.user.phone,
-      amount: amountNeeded,
-      payment_method: 'تخصيص لباقة استثمارية',
-      account_details: plan_name,
-      status: 'approved',
-      wallet_type: 'capital'
-    }]);
-
     const isAnnual = duration_months === 12 || plan_name.includes('السنوية');
     const endDate = new Date();
     if (isAnnual) {
@@ -1737,13 +1768,14 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
       endDate.setMonth(endDate.getMonth() + 1);
     }
 
+    // إدراج الباقة بحالة pending بانتظار موافقة الإدارة
     const { error: pkgErr } = await supabase.from('investment_packages').insert([{
       user_id: req.user.id,
       phone_number: req.user.phone,
       plan_name,
       invested_amount: amountNeeded,
       expected_payout: parseFloat(expected_payout),
-      status: 'active',
+      status: 'pending',
       end_date: endDate.toISOString()
     }]);
 
@@ -1751,21 +1783,56 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
 
     await supabase.from('notifications').insert([{
       user_id: req.user.id,
-      title: '🚀 تفعيل باقة جديدة',
-      message: `تم الاشتراك بـ (${plan_name}) بمبلغ ${amountNeeded.toLocaleString()} د.ع بنجاح.`
+      title: '⏳ طلب اشتراك قيد المراجعة',
+      message: `تم تقديم طلب الاشتراك بـ (${plan_name}) بمبلغ ${amountNeeded.toLocaleString()} د.ع وهو بانتظار موافقة الإدارة.`
     }]);
 
-    const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', req.user.id).single();
+    res.json({ success: true, message: 'تم إرسال طلب الاشتراك بنجاح وهو الآن بانتظار موافقة وتفعيل الإدارة.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// مسار موافقة الإدارة على الباقة (خصم الرصيد وتفعيلها رسمياً)
+app.patch('/api/admin/packages/approve', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.body;
+    const { data: pkg } = await supabase.from('investment_packages').select('*').eq('id', id).single();
+
+    if (!pkg) return res.status(404).json({ success: false, error: 'الباقة غير موجودة' });
+    if (pkg.status === 'active') return res.status(400).json({ success: false, error: 'الباقة مفعلة مسبقاً' });
+
+    // خصم رأس المال من رصيد المستخدم عبر جدول withdrawals المقبول
+    await supabase.from('withdrawals').insert([{
+      user_id: pkg.user_id,
+      phone_number: pkg.phone_number,
+      amount: pkg.invested_amount,
+      payment_method: 'تخصيص لباقة استثمارية',
+      account_details: pkg.plan_name,
+      status: 'approved',
+      wallet_type: 'capital'
+    }]);
+
+    // تفعيل الباقة
+    await supabase.from('investment_packages').update({ status: 'active' }).eq('id', id);
+
+    await supabase.from('notifications').insert([{
+      user_id: pkg.user_id,
+      title: '🚀 تفعيل باقتك الاستثمارية',
+      message: `تمت الموافقة على طلب اشتراكك بـ (${pkg.plan_name}) وتفعيلها بنجاح!`
+    }]);
+
+    const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', pkg.user_id).single();
     if (usr) {
       if (usr.onesignal_player_id) {
-        await sendOneSignalNotification([usr.onesignal_player_id], "🚀 تفعيل باقة جديدة", `تم الاشتراك بـ (${plan_name}) بنجاح.`);
+        await sendOneSignalNotification([usr.onesignal_player_id], "🚀 تفعيل باقتك الاستثمارية", `تمت الموافقة على اشتراكك بـ (${pkg.plan_name}) وتفعيلها بنجاح.`);
       }
       if (usr.telegram_chat_id) {
-        await sendTelegramNotification(usr.telegram_chat_id, `🚀 <b>تفعيل باقة جديدة!</b>\n\nتم الاشتراك بـ <b>${plan_name}</b> بمبلغ <b>${amountNeeded.toLocaleString()} د.ع</b> بنجاح.`);
+        await sendTelegramNotification(usr.telegram_chat_id, `🚀 <b>تفعيل الباقة الاستثمارية!</b>\n\nتمت الموافقة على طلب اشتراكك بـ <b>${pkg.plan_name}</b> وتفعيلها بنجاح.`);
       }
     }
 
-    res.json({ success: true, message: 'تم الاشتراك بالباقة وتفعيلها بنجاح من رصيدك المتاح!' });
+    res.json({ success: true, message: 'تمت الموافقة على الباقة وتفعيلها بنجاح!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -2084,7 +2151,7 @@ app.patch('/api/admin/users/toggle-block', authenticateAdmin, async (req, res) =
   }
 });
 
-app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) => {
+app.post('/api/admin/users/adjust-balance', authenticateAdmin, requireSuperAdmin, async (req, res) => {
   try {
     const { userId, actionType, walletType, amount, reason } = req.body;
     const numAmount = parseFloat(amount);
@@ -2149,7 +2216,7 @@ app.post('/api/admin/users/adjust-balance', authenticateAdmin, async (req, res) 
   }
 });
 
-app.delete('/api/admin/users/:userId', authenticateAdmin, async (req, res) => {
+app.delete('/api/admin/users/:userId', authenticateAdmin, requireSuperAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
 
@@ -2173,4 +2240,4 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🔒 السيرفر المحصن يعمل بنجاح على: https://maksab-production-6736.up.railway.app`));
+app.listen(PORT, () => console.log(`🔒 السيرفر المحصن يعمل بنجاح وبإدارة التنفيذي ${EXECUTIVE_DIRECTOR} على: https://maksab-production-6736.up.railway.app`));
