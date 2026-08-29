@@ -1,42 +1,34 @@
-const CACHE_NAME = 'maksab-cache-v2'; // قم بتغيير الرقم (v2, v3...) مع كل تحديث رئيسي ترفعه
-
-self.addEventListener('install', event => {
-  self.skipWaiting(); // اجبار الخدمة الجديدة على التثبيت فوراً دون انتظار إغلاق المتصفح
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(['/app']);
-    })
-  );
-});
-
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('🗑️ مسح الذاكرة المؤقتة القديمة:', cacheName);
-            return caches.delete(cacheName); // حذف الكاش القديم تلقائياً
-          }
-        })
+app.get('/sw.js', (req, res) => {
+  res.set('Content-Type', 'application/javascript');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.send(`
+    const CACHE_NAME = 'maksab-cache-v2'; // قم بتغيير رقم الإصدار مع كل تحديث رئيسي ترفعه
+    
+    self.addEventListener('install', e => {
+      self.skipWaiting(); // اجعل Service Worker الجديد يتثبت فوراً
+      e.waitUntil(
+        caches.open(CACHE_NAME).then(c => c.addAll(['/app']))
       );
-    }).then(() => self.clients.claim())
-  );
-});
+    });
 
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    fetch(event.request)
-      .then(networkResponse => {
-        // تحديث الكاش بالنسخة الجديدة من السيرفر مباشرة
-        return caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, networkResponse.clone());
-          return networkResponse;
-        });
-      })
-      .catch(() => {
-        // إذا كان المستخدم غير متصل بالإنترنت، اعرض النسخة المخزنة
-        return caches.match(event.request);
-      })
-  );
+    self.addEventListener('activate', e => {
+      e.waitUntil(
+        caches.keys().then(keys => {
+          return Promise.all(
+            keys.map(key => {
+              if (key !== CACHE_NAME) {
+                return caches.delete(key); // مسح الكاش القديم فوراً
+              }
+            })
+          );
+        }).then(() => self.clients.claim()) // السيطرة الفورية على الصفحات المفتوحة
+      );
+    });
+
+    self.addEventListener('fetch', e => {
+      e.respondWith(
+        fetch(e.request).catch(() => caches.match(e.request))
+      );
+    });
+  `);
 });
