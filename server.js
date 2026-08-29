@@ -895,7 +895,7 @@ app.get('/admin', (req, res) => {
         .header { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 20px 30px; border-radius: 18px; border: 1px solid var(--border-color); margin-bottom: 25px; box-shadow: 0 8px 20px rgba(0,0,0,0.3); flex-wrap: wrap; gap: 15px; }
         .header h2 { margin: 0; font-size: 20px; color: var(--accent-gold); display: flex; align-items: center; gap: 12px; }
 
-        .btn-action { background: #0f172a; border: 1px solid var(--border-color); color: var(--text-main); padding: 10px 18px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
+        .btn-action { background: #0f172a; border: 1px solid var(--border-color); color: var(--text-main); padding: 10px 18px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; position: relative; }
         .btn-action:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
         .btn-danger { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
         .btn-danger:hover { background: var(--danger); color: white; }
@@ -907,8 +907,12 @@ app.get('/admin', (req, res) => {
         .stat-info h3 { margin: 0; font-size: 22px; font-weight: 800; font-family: monospace; }
 
         .admin-nav { display: flex; gap: 10px; margin-bottom: 25px; background: var(--card-bg); padding: 8px; border-radius: 16px; border: 1px solid var(--border-color); overflow-x: auto; }
-        .nav-btn { flex: 1; padding: 12px 18px; border: none; background: transparent; color: var(--text-muted); font-weight: bold; font-size: 13px; border-radius: 10px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .nav-btn { flex: 1; padding: 12px 18px; border: none; background: transparent; color: var(--text-muted); font-weight: bold; font-size: 13px; border-radius: 10px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; }
         .nav-btn.active { background: #0f172a; color: var(--accent-gold); border: 1px solid rgba(212, 175, 55, 0.3); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+
+        /* علامة التنبيه الحمراء النابضة للأدمن */
+        .admin-pulse-dot { position: absolute; top: 8px; right: 12px; width: 10px; height: 10px; background-color: var(--danger); border-radius: 50%; box-shadow: 0 0 0 0 rgba(239, 68, 68, 1); animation: adminPulse 1.5s infinite; display: none; }
+        @keyframes adminPulse { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
 
         .admin-tab { display: none; }
         .admin-tab.active { display: block; }
@@ -963,6 +967,14 @@ app.get('/admin', (req, res) => {
           </div>
         </div>
 
+        <!-- تنبيه حي بالطلبات المعلقة -->
+        <div id="admin-live-alert-banner" style="display:none; background:rgba(239, 68, 68, 0.15); border:1px solid var(--danger); padding:12px 20px; border-radius:14px; margin-bottom:20px; align-items:center; justify-content:space-between; animation: pulse 2s infinite;">
+          <div style="display:flex; align-items:center; gap:10px; color:var(--danger); font-weight:bold; font-size:14px;">
+            <i class="fa-solid fa-triangle-exclamation" style="font-size:18px;"></i>
+            <span id="admin-banner-text">تنبيه: توجد طلبات جديدة بانتظار المراجعة والاعتماد!</span>
+          </div>
+        </div>
+
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--success);"><i class="fa-solid fa-vault"></i></div>
@@ -996,9 +1008,9 @@ app.get('/admin', (req, res) => {
 
         <div class="admin-nav">
           <button class="nav-btn active" data-tab="tab-dash"><i class="fa-solid fa-chart-pie"></i> الرئيسية والتحكم</button>
-          <button class="nav-btn" data-tab="tab-deposits"><i class="fa-solid fa-file-invoice-dollar"></i> طلبات شحن الرصيد</button>
-          <button class="nav-btn" data-tab="tab-packages"><i class="fa-solid fa-box-archive"></i> الباقات الاستثمارية</button>
-          <button class="nav-btn" data-tab="tab-withdrawals"><i class="fa-solid fa-money-bill-transfer"></i> طلبات السحب</button>
+          <button class="nav-btn" data-tab="tab-deposits"><i class="fa-solid fa-file-invoice-dollar"></i> طلبات شحن الرصيد <span class="admin-pulse-dot" id="dot-deposits"></span></button>
+          <button class="nav-btn" data-tab="tab-packages"><i class="fa-solid fa-box-archive"></i> الباقات الاستثمارية <span class="admin-pulse-dot" id="dot-packages"></span></button>
+          <button class="nav-btn" data-tab="tab-withdrawals"><i class="fa-solid fa-money-bill-transfer"></i> طلبات السحب <span class="admin-pulse-dot" id="dot-withdrawals"></span></button>
           <button class="nav-btn" data-tab="tab-users"><i class="fa-solid fa-id-card"></i> المستثمرين و KYC</button>
         </div>
 
@@ -1212,7 +1224,10 @@ app.get('/admin', (req, res) => {
             if (target.classList.contains('act-toggle-pkg')) togglePackageStatus(target.dataset.pkg, target.dataset.paused === 'true');
           });
 
-          if (adminToken) showAdmin();
+          if (adminToken) {
+            showAdmin();
+            setInterval(loadAdminData, 6000); // تحديث تلقائي كل 6 ثوانٍ للتحقق من أي طلبات جديدة
+          }
         });
 
         async function loginAdmin() {
@@ -1244,6 +1259,7 @@ app.get('/admin', (req, res) => {
               localStorage.setItem('maksab_admin_token', adminToken);
               localStorage.setItem('maksab_admin_role', adminRole);
               showAdmin();
+              setInterval(loadAdminData, 6000);
             } else {
               if (msg) { msg.innerText = '❌ ' + (data.error || 'كلمة المرور غير صحيحة'); msg.style.color = 'var(--danger)'; }
             }
@@ -1336,6 +1352,26 @@ app.get('/admin', (req, res) => {
             var resU = await fetch('/api/admin/users', { headers: headers });
             var dataU = await resU.json();
             var users = dataU.data || [];
+
+            // 🔴 فحص الطلبات المعلقة وإظهار العلامات والنقاط الحمراء النابضة للادمن تلقائياً
+            var pendingDepositsCount = deposits.filter(function(d) { return d.status === 'pending'; }).length;
+            var pendingWithdrawalsCount = withdrawals.filter(function(w) { return w.status === 'pending'; }).length;
+            var pendingPackagesCount = packages.filter(function(p) { return p.status === 'pending'; }).length;
+            var totalPending = pendingDepositsCount + pendingWithdrawalsCount + pendingPackagesCount;
+
+            var banner = document.getElementById('admin-live-alert-banner');
+            var bannerText = document.getElementById('admin-banner-text');
+
+            if (totalPending > 0) {
+              banner.style.display = 'flex';
+              bannerText.innerHTML = 'تنبيه عاجل: توجد (' + totalPending + ') طلبات جديدة بحاجة لمراجعتك واعتمادها (شحن: ' + pendingDepositsCount + ' | سحب: ' + pendingWithdrawalsCount + ' | باقات: ' + pendingPackagesCount + ')';
+            } else {
+              banner.style.display = 'none';
+            }
+
+            document.getElementById('dot-deposits').style.display = pendingDepositsCount > 0 ? 'block' : 'none';
+            document.getElementById('dot-withdrawals').style.display = pendingWithdrawalsCount > 0 ? 'block' : 'none';
+            document.getElementById('dot-packages').style.display = pendingPackagesCount > 0 ? 'block' : 'none';
 
             var activeCap = 0; var totalProf = 0; var withCap = 0;
             deposits.forEach(function(d) {
