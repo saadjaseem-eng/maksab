@@ -14,7 +14,7 @@ app.use(express.json({ limit: '20mb' }));
 
 // المتغيرات السرية المأخوذة من ملف .env ونظام الصلاحيات الثنائي
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const MODERATOR_PASSWORD = process.env.MODERATOR_PASSWORD || 'mod123'; // كلمة مرور المشرف المساعد
+const MODERATOR_PASSWORD = process.env.MODERATOR_PASSWORD || 'mod123';
 const EXECUTIVE_DIRECTOR = 'محمود صبحي'; // المدير التنفيذي للمشروع
 const JWT_SECRET = process.env.JWT_SECRET || 'maksab_super_secure_jwt_secret_2026';
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
@@ -25,7 +25,7 @@ const TELEGRAM_BOT_NAME = process.env.TELEGRAM_BOT_NAME || 'MaksabBot';
 const ONE_SIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
-// ذاكرة مؤقتة لحالة الباقات (مفعلة أو متوقفة مؤقتاً)
+// ذاكرة مؤقتة لحالة الباقات
 let packageStatusMemory = {
   'الباقة الفضية الشهرية': true,
   'الباقة الذهبية الشهرية': true,
@@ -33,6 +33,12 @@ let packageStatusMemory = {
   'الباقة السنوية الفضية': true,
   'الباقة السنوية الذهبية': true,
   'الباقة السنوية الماسية VIP': true
+};
+
+// ذاكرة مؤقتة للشريط الإعلاني للمستثمرين
+let announcementMemory = {
+  active: true,
+  text: '🔥 أهلاً بكم في منصة مَكْسَب الاستثمارية. تم إطلاق باقات استثمارية جديدة كلياً وتفعيل السحب الفوري، استثمر الآن وضاعف أرباحك!'
 };
 
 // ==========================================
@@ -146,7 +152,7 @@ async function uploadToStorage(base64Data) {
 }
 
 // ==========================================
-// برمجيات التوثيق والحماية والتحقق من الصلاحيات الثنائية (Middlewares)
+// برمجيات التوثيق والحماية والتحقق من الصلاحيات
 // ==========================================
 const authenticateUser = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -220,6 +226,15 @@ app.get('/app', (req, res) => {
         * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; transition: all 0.3s ease; }
         body { background: var(--bg-color); color: var(--text-main); margin: 0; padding: 20px; min-height: 100vh; }
         .container { max-width: 900px; margin: 0 auto; }
+        
+        /* الشريط الإعلاني المتحرك للمستثمرين */
+        .announcement-ticker { background: linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%); border: 1px solid rgba(212, 175, 55, 0.4); padding: 12px 20px; border-radius: 14px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; overflow: hidden; position: relative; box-shadow: 0 4px 15px rgba(212,175,55,0.1); }
+        .announcement-icon { color: var(--accent-gold); font-size: 18px; animation: bounce 1.5s infinite; flex-shrink: 0; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        .announcement-text-wrapper { overflow: hidden; width: 100%; white-space: nowrap; }
+        .announcement-text { display: inline-block; animation: marquee 25s linear infinite; font-size: 13px; font-weight: bold; color: var(--text-main); }
+        @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+
         .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: rgba(30, 41, 59, 0.8); padding: 15px 20px; border-radius: 15px; border: 1px solid rgba(212, 175, 55, 0.2); position: relative; flex-wrap: wrap; gap: 10px; }
         .auth-card { background: var(--card-bg); padding: 35px 25px; border-radius: 20px; max-width: 400px; margin: 40px auto; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         .input-group { position: relative; margin-bottom: 15px; }
@@ -271,6 +286,15 @@ app.get('/app', (req, res) => {
     </head>
     <body>
       <div class="container">
+        
+        <!-- الشريط الإعلاني المتحرك -->
+        <div id="announcement-banner-container" class="announcement-ticker" style="display:none;">
+          <div class="announcement-icon"><i class="fa-solid fa-bullhorn"></i></div>
+          <div class="announcement-text-wrapper">
+            <span class="announcement-text" id="announcement-banner-text"></span>
+          </div>
+        </div>
+
         <!-- شاشة الدخول -->
         <div id="auth-section" class="auth-card">
           <i class="fa-solid fa-shield-halved" style="font-size: 40px; color: var(--accent-gold); margin-bottom: 15px;"></i>
@@ -614,6 +638,24 @@ app.get('/app', (req, res) => {
           } catch(e) { console.error(e); }
         }
 
+        async function fetchAnnouncementBanner() {
+          try {
+            var res = await fetch('/api/announcement');
+            var data = await res.json();
+            if (data.success && data.data && data.data.active) {
+              var banner = document.getElementById('announcement-banner-container');
+              var bannerText = document.getElementById('announcement-banner-text');
+              if (banner && bannerText) {
+                bannerText.innerText = data.data.text;
+                banner.style.display = 'flex';
+              }
+            } else {
+              var banner = document.getElementById('announcement-banner-container');
+              if (banner) banner.style.display = 'none';
+            }
+          } catch(e) { console.error(e); }
+        }
+
         function initDashboard() {
           if (!authToken) return;
           document.getElementById('auth-section').style.display = 'none';
@@ -627,7 +669,9 @@ app.get('/app', (req, res) => {
           loadUserPackages();
           loadUserNotifications();
           fetchSystemSettings();
+          fetchAnnouncementBanner();
           setInterval(fetchSystemSettings, 10000);
+          setInterval(fetchAnnouncementBanner, 15000);
         }
 
         async function fetchWithAuth(url, options) {
@@ -875,7 +919,7 @@ app.get('/app', (req, res) => {
         function copyRefLink() { navigator.clipboard.writeText(document.getElementById('ref-link').value); alert('تم نسخ الرابط!'); }
         function logout() { localStorage.clear(); location.reload(); }
 
-        if (authToken && currentUser) initDashboard();
+        fetchAnnouncementBanner();
       </script>
     </body>
     </html>
@@ -1036,6 +1080,32 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
         </div>
 
         <div id="tab-dash" class="admin-tab active">
+          
+          <!-- 📢 لوحة التحكم في الشريط الإعلاني المتحرك للمستثمرين -->
+          <div class="card-panel">
+            <h3><i class="fa-solid fa-bullhorn"></i> إدارة الشريط الإعلاني للمستثمرين (Ticker Announcement)</h3>
+            <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">اكتب نص الإعلان أو التحديث الجديد ليظهر فوراً بشكل متحرك أعلى واجهة جميع المستثمرين بالموقع.</p>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <div>
+                <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:5px;">حالة الشريط الإعلاني:</label>
+                <select id="admin-announcement-active" style="width:100%; padding:10px; background:#0f172a; border:1px solid var(--border-color); color:white; border-radius:10px;">
+                  <option value="true">🟢 تفعيل وإظهار الشريط للمستثمرين</option>
+                  <option value="false">🔴 إيقاف وإخفاء الشريط تماماً</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:5px;">نص الإعلان أو التحديث:</label>
+                <textarea id="admin-announcement-text" rows="2" style="width:100%; background:#0f172a; border:1px solid var(--border-color); color:white; border-radius:10px; padding:11px 14px; outline:none; font-family:inherit;" placeholder="اكتب الإعلان الجديد هنا..."></textarea>
+              </div>
+              <div style="display:flex; align-items:center; gap:15px;">
+                <button id="btn-save-announcement" class="btn-gold-action" style="max-width:280px;">
+                  <i class="fa-solid fa-floppy-disk"></i> حفظ وتحديث الشريط الإعلاني 🚀
+                </button>
+                <span id="announcement-msg" style="font-size:13px; font-weight:bold;"></span>
+              </div>
+            </div>
+          </div>
+
           <div class="card-panel" id="super-admin-section">
             <h3><i class="fa-solid fa-toggle-on"></i> التحكم في تشغيل وإيقاف الباقات يدوياً (صلاحية المدير الرئيسي)</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">قم بإيقاف أي باقة مؤقتاً لتظهر للمستثمرين كمتوقفة ولا يمكن الاشتراك بها، ثم أعد تفعيلها متى شئت.</p>
@@ -1218,6 +1288,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
           document.getElementById('btn-admin-logout').addEventListener('click', logoutAdmin);
           document.getElementById('btn-trigger-payouts').addEventListener('click', triggerPackagePayouts);
           document.getElementById('btn-send-broadcast').addEventListener('click', sendBroadcastMessage);
+          document.getElementById('btn-save-announcement').addEventListener('click', saveAnnouncementSettings);
           document.getElementById('btn-submit-balance').addEventListener('click', submitBalanceAdjustment);
           document.getElementById('btn-close-balance').addEventListener('click', closeBalanceModal);
 
@@ -1292,6 +1363,45 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
           }
         }
 
+        async function loadAnnouncementFormData() {
+          try {
+            var res = await fetch('/api/announcement');
+            var data = await res.json();
+            if (data.success && data.data) {
+              document.getElementById('admin-announcement-active').value = String(data.data.active);
+              document.getElementById('admin-announcement-text').value = data.data.text || '';
+            }
+          } catch(e) { console.error(e); }
+        }
+
+        async function saveAnnouncementSettings() {
+          var active = document.getElementById('admin-announcement-active').value === 'true';
+          var text = document.getElementById('admin-announcement-text').value.trim();
+          var msgEl = document.getElementById('announcement-msg');
+
+          msgEl.innerText = 'جاري حفظ وحفظ إعدادات الشريط...';
+          msgEl.style.color = 'var(--warning)';
+
+          try {
+            var res = await fetch('/api/admin/announcement', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+              body: JSON.stringify({ active: active, text: text })
+            });
+            var data = await res.json();
+            if (data.success) {
+              msgEl.innerText = '✅ ' + data.message;
+              msgEl.style.color = 'var(--success)';
+            } else {
+              msgEl.innerText = '❌ ' + data.error;
+              msgEl.style.color = 'var(--danger)';
+            }
+          } catch(e) {
+            msgEl.innerText = '❌ خطأ في الاتصال بالسيرفر';
+            msgEl.style.color = 'var(--danger)';
+          }
+        }
+
         function showAdmin() {
           document.getElementById('admin-auth').style.display = 'none';
           document.getElementById('admin-dash').style.display = 'block';
@@ -1305,6 +1415,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
           }
 
           loadAdminData();
+          loadAnnouncementFormData();
         }
 
         function logoutAdmin() {
@@ -1679,6 +1790,23 @@ app.get('/api/packages/settings', (req, res) => {
   res.json({ success: true, data: packageStatusMemory });
 });
 
+app.get('/api/announcement', (req, res) => {
+  res.json({ success: true, data: announcementMemory });
+});
+
+app.post('/api/admin/announcement', authenticateAdmin, (req, res) => {
+  try {
+    const { active, text } = req.body;
+    announcementMemory = {
+      active: Boolean(active),
+      text: text || ''
+    };
+    res.json({ success: true, message: 'تم تحديث الشريط الإعلاني بنجاح وسيظهر للمستثمرين فوراً!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/admin/packages/toggle', authenticateAdmin, requireSuperAdmin, (req, res) => {
   try {
     const { package_name, is_paused } = req.body;
@@ -1795,7 +1923,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// تعديل طلب الاشتراك بالباقة ليصبح معلقاً (Pending) بانتظار موافقة الإدارة
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
@@ -1828,7 +1955,6 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
       endDate.setMonth(endDate.getMonth() + 1);
     }
 
-    // إدراج الباقة بحالة pending بانتظار موافقة الإدارة
     const { error: pkgErr } = await supabase.from('investment_packages').insert([{
       user_id: req.user.id,
       phone_number: req.user.phone,
@@ -1853,7 +1979,6 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   }
 });
 
-// مسار موافقة الإدارة على الباقة (خصم الرصيد وتفعيلها رسمياً)
 app.patch('/api/admin/packages/approve', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.body;
@@ -1862,7 +1987,6 @@ app.patch('/api/admin/packages/approve', authenticateAdmin, async (req, res) => 
     if (!pkg) return res.status(404).json({ success: false, error: 'الباقة غير موجودة' });
     if (pkg.status === 'active') return res.status(400).json({ success: false, error: 'الباقة مفعلة مسبقاً' });
 
-    // خصم رأس المال من رصيد المستخدم عبر جدول withdrawals المقبول
     await supabase.from('withdrawals').insert([{
       user_id: pkg.user_id,
       phone_number: pkg.phone_number,
@@ -1873,7 +1997,6 @@ app.patch('/api/admin/packages/approve', authenticateAdmin, async (req, res) => 
       wallet_type: 'capital'
     }]);
 
-    // تفعيل الباقة
     await supabase.from('investment_packages').update({ status: 'active' }).eq('id', id);
 
     await supabase.from('notifications').insert([{
