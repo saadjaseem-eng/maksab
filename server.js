@@ -784,7 +784,12 @@ app.get('/app', (req, res) => {
           options.headers = options.headers || {};
           options.headers['Authorization'] = 'Bearer ' + authToken;
           var res = await fetch(url, options);
-          if (res.status === 401 || res.status === 403) logout();
+          // لا نقوم بتسجيل الخروج فوراً عند 401/403 أثناء تحميل البيانات
+          // قد يكون السبب جدول مفقود أو RLS في Supabase، وليس بالضرورة توكن منتهي
+          // نُرجّع JSON فارغ بدل إيقاف الجلسة كلياً
+          if (res.status === 401 || res.status === 403) {
+            try { return await res.json(); } catch(e) { return { success: false, data: [] }; }
+          }
           return res.json();
         }
         async function loadUserData() {
@@ -902,7 +907,9 @@ app.get('/app', (req, res) => {
         }
         function copyRefLink() { navigator.clipboard.writeText(document.getElementById('ref-link').value); alert('تم نسخ الرابط!'); }
         function logout() { localStorage.clear(); location.reload(); }
+        // عند تحميل الصفحة: جلب الشريط الإعلاني، والدخول التلقائي إذا كان التوكن محفوظاً
         fetchAnnouncementBanner();
+        if (authToken && currentUser) { initDashboard(); } else { fetchSystemSettings(); }
       </script>
     </body>
     </html>
@@ -1235,17 +1242,19 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
 // ==========================================
 
 // إعدادات الباقات للمستثمرين
+// الواجهة تتوقع data.data ككائن يحوي حالات الباقات + active + text للإعلان
 app.get('/api/packages/settings', (req, res) => {
-  res.json({
-    success: true,
-    packages: packageStatusMemory,
-    announcement: announcementMemory
+  const data = Object.assign({}, packageStatusMemory, {
+    active: announcementMemory.active,
+    text: announcementMemory.text
   });
+  res.json({ success: true, data });
 });
 
 // الشريط الإعلاني للمستثمرين
+// الواجهة تتوقع data.data.active و data.data.text
 app.get('/api/announcement', (req, res) => {
-  res.json({ success: true, announcement: announcementMemory });
+  res.json({ success: true, data: { active: announcementMemory.active, text: announcementMemory.text } });
 });
 
 // تحديث الشريط الإعلاني (للمدير الرئيسي فقط)
@@ -1313,7 +1322,12 @@ app.post('/api/admin/auth', async (req, res) => {
 
 // تسجيل مستثمر جديد
 app.post('/api/auth/register', async (req, res) => {
-  const { username, phone, password, referrer_code } = req.body;
+  // دعم أسماء الحقول القادمة من الواجهة (phone_number / full_name / referred_by)
+  // بالإضافة إلى الأسماء القياسية (phone / username / referrer_code) للتوافق
+  const username = req.body.username || req.body.full_name;
+  const phone = req.body.phone || req.body.phone_number;
+  const password = req.body.password;
+  const referrer_code = req.body.referrer_code || req.body.referred_by;
 
   if (!username || !phone || !password) {
     return res.status(400).json({ success: false, error: 'يرجى تعبئة جميع الحقول' });
@@ -1332,8 +1346,14 @@ app.post('/api/auth/register', async (req, res) => {
     // البحث عن المُحيل
     let referrerId = null;
     if (referrer_code) {
-      const { data: referrer } = await supabase.from('users').select('id').eq('referrer_code', referrer_code).maybeSingle();
-      if (referrer) referrerId = referrer.id;
+      // البحث عن المُحيل برمز الإحالة (referrer_code) أو بمعرفه (id) — لأن رابط الإحالة يستخدم id
+      const { data: refByCode } = await supabase.from('users').select('id').eq('referrer_code', referrer_code).maybeSingle();
+      if (refByCode) {
+        referrerId = refByCode.id;
+      } else {
+        const { data: refById } = await supabase.from('users').select('id').eq('id', referrer_code).maybeSingle();
+        if (refById) referrerId = refById.id;
+      }
     }
 
     const { data: newUser, error } = await supabase.from('users').insert({
@@ -1353,7 +1373,20 @@ app.post('/api/auth/register', async (req, res) => {
       await sendTelegramNotification(null, `🆕 مستثمر جديد:\\nالاسم: ${username}\\nالهاتف: ${phone}`).catch(()=>{});
     }
 
-    res.json({ success: true, token, user: { id: newUser.id, username, phone, balance: 0, referrer_code: newReferrerCode, kyc_verified: false } });
+    res.json({
+      success: true,
+      message: 'تم إنشاء الحساب بنجاح',
+      token,
+      user: {
+        id: newUser.id,
+        full_name: username,
+        username: username,
+        phone: phone,
+        balance: 0,
+        referrer_code: newReferrerCode,
+        kyc_verified: false
+      }
+    });
   } catch (err) {
     console.error('❌ خطأ في التسجيل:', err.message);
     res.status(500).json({ success: false, error: 'فشل التسجيل: ' + err.message });
@@ -1362,7 +1395,9 @@ app.post('/api/auth/register', async (req, res) => {
 
 // تسجيل الدخول
 app.post('/api/auth/login', async (req, res) => {
-  const { phone, password } = req.body;
+  // دعم أسماء الحقول القادمة من الواجهة (phone_number) والحقل القياسي (phone)
+  const phone = req.body.phone || req.body.phone_number;
+  const password = req.body.password;
 
   if (!phone || !password) {
     return res.status(400).json({ success: false, error: 'يرجى إدخال الهاتف وكلمة المرور' });
@@ -1387,7 +1422,15 @@ app.post('/api/auth/login', async (req, res) => {
     const token = jwt.sign({ id: user.id, phone: user.phone }, JWT_SECRET, { expiresIn: '30d' });
     res.json({
       success: true, token,
-      user: { id: user.id, username: user.username, phone: user.phone, balance: user.balance, referrer_code: user.referrer_code, kyc_verified: user.kyc_verified }
+      user: {
+        id: user.id,
+        full_name: user.username || user.full_name,
+        username: user.username,
+        phone: user.phone,
+        balance: user.balance,
+        referrer_code: user.referrer_code,
+        kyc_verified: user.kyc_verified
+      }
     });
   } catch (err) {
     console.error('❌ خطأ في الدخول:', err.message);
@@ -1401,7 +1444,11 @@ app.post('/api/auth/login', async (req, res) => {
 
 // الاشتراك في باقة
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
-  const { package_name, amount, wallet_type } = req.body;
+  // دعم أسماء الحقول القادمة من الواجهة (plan_name / invested_amount)
+  // بالإضافة إلى الأسماء القياسية (package_name / amount)
+  const package_name = req.body.package_name || req.body.plan_name;
+  const amount = req.body.amount || req.body.invested_amount;
+  const wallet_type = req.body.wallet_type;
   const userId = req.user.id;
 
   if (!package_name || !amount) {
@@ -1422,7 +1469,7 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
     }).select().single();
 
     if (error) throw error;
-    res.json({ success: true, package: data });
+    res.json({ success: true, message: 'تم إرسال طلب الاشتراك للإدارة للمراجعة', package: data });
   } catch (err) {
     console.error('❌ خطأ في الاشتراك:', err.message);
     res.status(500).json({ success: false, error: 'فشل الاشتراك' });
@@ -1483,23 +1530,32 @@ app.post('/api/admin/packages/payout', authenticateAdmin, async (req, res) => {
 // ==========================================
 
 // جلب إشعارات المستثمر
+// الواجهة تتوقع data.data كمصفوفة + حقل is_read في كل إشعار
 app.get('/api/user/notifications', authenticateUser, async (req, res) => {
   try {
     const { data, error } = await supabase.from('notifications')
       .select('*').eq('user_id', req.user.id)
       .order('created_at', { ascending: false }).limit(50);
     if (error) throw error;
-    res.json({ success: true, notifications: data || [] });
+    // إضافة is_read للتوافق مع الواجهة (قاعدة البيانات تستخدم read)
+    const notifs = (data || []).map(function(n) { n.is_read = !!n.read; return n; });
+    res.json({ success: true, data: notifs });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// تعليم إشعار كمقروء
+// تعليم إشعار كمقروء (أو كل الإشعارات إذا لم يُرسل id)
 app.post('/api/user/notifications/read', authenticateUser, async (req, res) => {
   const { id } = req.body;
   try {
-    await supabase.from('notifications').update({ read: true }).eq('id', id).eq('user_id', req.user.id);
+    if (id) {
+      // تعليم إشعار واحد
+      await supabase.from('notifications').update({ read: true }).eq('id', id).eq('user_id', req.user.id);
+    } else {
+      // تعليم كل إشعارات المستخدم كمقروءة (عند طلب "تعليم الكل كمقروء")
+      await supabase.from('notifications').update({ read: true }).eq('user_id', req.user.id);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -1507,11 +1563,22 @@ app.post('/api/user/notifications/read', authenticateUser, async (req, res) => {
 });
 
 // باقات المستثمر
+// الواجهة تتوقع data.data كمصفوفة، مع الحقول: plan_name, invested_amount, expected_payout, status, end_date
 app.get('/api/user/packages', authenticateUser, async (req, res) => {
   try {
     const { data, error } = await supabase.from('user_packages').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false });
     if (error) throw error;
-    res.json({ success: true, packages: data || [] });
+    // تحويل أسماء الحقول والحالات لتتوافق مع الواجهة
+    const packages = (data || []).map(function(p) {
+      return Object.assign({}, p, {
+        plan_name: p.plan_name || p.package_name,
+        invested_amount: p.invested_amount || p.amount,
+        expected_payout: p.expected_payout || (p.expected_payout ? p.expected_payout : null),
+        // pending => pending, approved => active, rejected => completed
+        status: p.status === 'approved' ? 'active' : (p.status === 'rejected' ? 'completed' : p.status)
+      });
+    });
+    res.json({ success: true, data: packages });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1549,7 +1616,7 @@ app.post('/api/deposits', authenticateUser, async (req, res) => {
     }).select().single();
 
     if (error) throw error;
-    res.json({ success: true, deposit: data });
+    res.json({ success: true, message: 'تم إرسال طلب الشحن بنجاح', deposit: data });
   } catch (err) {
     console.error('❌ خطأ في طلب الشحن:', err.message);
     res.status(500).json({ success: false, error: 'فشل إنشاء طلب الشحن' });
@@ -1575,13 +1642,13 @@ app.post('/api/withdrawals', authenticateUser, async (req, res) => {
     const { data, error } = await supabase.from('withdrawals').insert({
       user_id: userId, amount: parseFloat(amount),
       payment_method: payment_method || 'ZainCash',
-      account_details, wallet_type: wallet_type || 'profits',
+      account_details, wallet_type: wallet_type || 'profit',
       status: 'pending',
       created_at: new Date().toISOString()
     }).select().single();
 
     if (error) throw error;
-    res.json({ success: true, withdrawal: data });
+    res.json({ success: true, message: 'تم تقديم طلب السحب بنجاح', withdrawal: data });
   } catch (err) {
     console.error('❌ خطأ في طلب السحب:', err.message);
     res.status(500).json({ success: false, error: 'فشل إنشاء طلب السحب' });
@@ -1614,22 +1681,33 @@ app.post('/api/user/kyc', authenticateUser, async (req, res) => {
 });
 
 // شحنات المستثمر
+// الواجهة تتوقع data.data كمصفوفة، وتستخدم wallet_type === 'profit' للأرباح
 app.get('/api/user/deposits', authenticateUser, async (req, res) => {
   try {
     const { data, error } = await supabase.from('deposits').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false });
     if (error) throw error;
-    res.json({ success: true, deposits: data || [] });
+    // توحيد wallet_type: 'profits' => 'profit' للتوافق مع الواجهة
+    const deposits = (data || []).map(function(d) {
+      if (d.wallet_type === 'profits') d.wallet_type = 'profit';
+      return d;
+    });
+    res.json({ success: true, data: deposits });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // سحوبات المستثمر
+// الواجهة تتوقع data.data كمصفوفة، وتستخدم wallet_type === 'profit' للأرباح
 app.get('/api/user/withdrawals', authenticateUser, async (req, res) => {
   try {
     const { data, error } = await supabase.from('withdrawals').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false });
     if (error) throw error;
-    res.json({ success: true, withdrawals: data || [] });
+    const withdrawals = (data || []).map(function(w) {
+      if (w.wallet_type === 'profits') w.wallet_type = 'profit';
+      return w;
+    });
+    res.json({ success: true, data: withdrawals });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
