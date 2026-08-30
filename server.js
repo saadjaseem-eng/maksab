@@ -1783,7 +1783,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
         }
 
         async function cancelPkg(id, pkgName) {
-          if (!confirm('⚠️ هل أنت متأكد من إلغاء الباقة: ' + (pkgName || '') + '؟\nسيتم حذف الباقة واسترجاع المبلغ المستثمر إلى رصيد المستثمر.')) return;
+          if (!confirm('⚠️ هل أنت متأكد من إلغاء الباقة: ' + (pkgName || '') + '؟\\nسيتم حذف الباقة واسترجاع المبلغ المستثمر إلى رصيد المستثمر.')) return;
           var res = await fetch('/api/admin/packages/cancel', { method: 'DELETE', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + adminToken}, body: JSON.stringify({ id: id }) });
           var data = await res.json();
           if (data.success) {
