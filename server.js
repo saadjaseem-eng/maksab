@@ -1918,6 +1918,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             alert('❌ حدث خطأ أثناء تنفيذ عملية الحذف');
           }
         }
+      </script>
       <script>
         // تسجيل Service Worker للوحة الإدارة — تحديث تلقائي
         if ('serviceWorker' in navigator) {
