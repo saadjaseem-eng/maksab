@@ -1309,6 +1309,13 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
         <div id="tab-packages" class="admin-tab">
           <div class="card-panel">
             <h3><i class="fa-solid fa-box-archive"></i> الباقات الاستثمارية للمشتركين (بانتظار الموافقة أو النشطة)</h3>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+              <label style="color:var(--text-muted); font-size:13px; font-weight:bold;"><i class="fa-solid fa-filter"></i> تصفية حسب المستثمر:</label>
+              <select id="pkg-investor-filter" onchange="filterPackagesByInvestor()" style="background:#0f172a; color:white; border:1px solid var(--border-color); padding:8px 15px; border-radius:8px; font-size:13px; cursor:pointer; min-width:200px;">
+                <option value="">عرض جميع المستثمرين</option>
+              </select>
+              <span id="pkg-filter-count" style="color:var(--accent-gold); font-size:12px; font-weight:bold;"></span>
+            </div>
             <div class="table-responsive">
               <table>
                 <thead>
@@ -1418,6 +1425,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
       <script>
         var adminToken = localStorage.getItem('maksab_admin_token') || null;
         var adminRole = localStorage.getItem('maksab_admin_role') || null;
+        var allPackagesData = [];
 
         document.addEventListener('DOMContentLoaded', function() {
           var loginBtn = document.getElementById('admin-login-btn');
@@ -1450,6 +1458,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             if (target.classList.contains('act-dep-approve')) approveDep(target.dataset.id);
             if (target.classList.contains('act-with-approve')) approveWith(target.dataset.id);
             if (target.classList.contains('act-pkg-approve')) approvePkg(target.dataset.id);
+            if (target.classList.contains('act-pkg-cancel')) cancelPkg(target.dataset.id, target.dataset.name);
             if (target.classList.contains('act-open-modal')) openBalanceModal(target.dataset.id, target.dataset.name);
             if (target.classList.contains('act-toggle-block')) toggleBlockUser(target.dataset.id, target.dataset.blocked === 'true', target.dataset.name);
             if (target.classList.contains('act-delete-user')) deleteUser(target.dataset.id, target.dataset.name);
@@ -1679,21 +1688,8 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
                      '</tr>';
             }).join('');
 
-            document.getElementById('pkg-table').innerHTML = packages.map(function(p) {
-              var dateFormatted = p.end_date ? new Date(p.end_date).toLocaleDateString('ar-IQ') : '-';
-              var statusText = p.status === 'active' ? '⚡ نشطة' : (p.status === 'completed' ? '🎉 مكتملة' : '⏳ قيد الانتظار للموافقة');
-              var actionBtn = p.status === 'pending' ? '<button data-id="' + p.id + '" class="btn-approve act-pkg-approve"><i class="fa-solid fa-check"></i> موافقة وتفعيل</button>' : '-';
-
-              return '<tr>' +
-                       '<td><strong>' + p.phone_number + '</strong></td>' +
-                       '<td><strong style="color:var(--accent-gold);">' + p.plan_name + '</strong></td>' +
-                       '<td>' + Number(p.invested_amount).toLocaleString() + ' د.ع</td>' +
-                       '<td><strong style="color:var(--success);">' + Number(p.expected_payout).toLocaleString() + ' د.ع</strong></td>' +
-                       '<td>' + dateFormatted + '</td>' +
-                       '<td><span class="badge-status status-' + p.status + '">' + statusText + '</span></td>' +
-                       '<td>' + actionBtn + '</td>' +
-                     '</tr>';
-            }).join('');
+            // تخزين الباقات وعرضها عبر دالة موحدة (تدعم التصنيف حسب المستثمر)
+            renderPackagesTable(packages);
 
             document.getElementById('with-table').innerHTML = withdrawals.map(function(w) {
               var walletText = w.wallet_type === 'profit' ? 'من الأرباح' : 'من رأس المال';
@@ -1783,6 +1779,83 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             loadAdminData();
           } else {
             alert('❌ ' + data.error);
+          }
+        }
+
+        async function cancelPkg(id, pkgName) {
+          if (!confirm('⚠️ هل أنت متأكد من إلغاء الباقة: ' + (pkgName || '') + '؟\nسيتم حذف الباقة واسترجاع المبلغ المستثمر إلى رصيد المستثمر.')) return;
+          var res = await fetch('/api/admin/packages/cancel', { method: 'DELETE', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + adminToken}, body: JSON.stringify({ id: id }) });
+          var data = await res.json();
+          if (data.success) {
+            alert('✅ ' + data.message);
+            loadAdminData();
+          } else {
+            alert('❌ ' + data.error);
+          }
+        }
+
+        // دالة موحدة لعرض الباقات مع دعم التصنيف حسب المستثمر
+        function renderPackagesTable(packages) {
+          allPackagesData = packages;
+          var filterSelect = document.getElementById('pkg-investor-filter');
+          var currentFilter = filterSelect ? filterSelect.value : '';
+
+          // تعبئة قائمة الفلترة بأسماء المستثمرين (رقم الهاتف)
+          if (filterSelect) {
+            var uniqueInvestors = {};
+            packages.forEach(function(p) {
+              if (p.phone_number && !uniqueInvestors[p.phone_number]) {
+                uniqueInvestors[p.phone_number] = true;
+              }
+            });
+            var investorOptions = '<option value="">عرض جميع المستثمرين</option>';
+            Object.keys(uniqueInvestors).sort().forEach(function(phone) {
+              var pkgCount = packages.filter(function(p) { return p.phone_number === phone; }).length;
+              investorOptions += '<option value="' + phone + '"' + (currentFilter === phone ? ' selected' : '') + '>' + phone + ' (' + pkgCount + ' باقة)</option>';
+            });
+            filterSelect.innerHTML = investorOptions;
+            if (currentFilter) filterSelect.value = currentFilter;
+          }
+
+          // تصفية الباقات حسب المستثمر المختار
+          var filteredPackages = currentFilter ? packages.filter(function(p) { return p.phone_number === currentFilter; }) : packages;
+          var countLabel = document.getElementById('pkg-filter-count');
+          if (countLabel) countLabel.innerText = currentFilter ? 'عرض ' + filteredPackages.length + ' باقة لهذا المستثمر' : '';
+
+          // ترتيب الباقات: تجميعها حسب المستثمر ثم حسب الحالة (pending أولاً ثم active ثم completed)
+          filteredPackages.sort(function(a, b) {
+            if (a.phone_number !== b.phone_number) {
+              return a.phone_number < b.phone_number ? -1 : 1;
+            }
+            var orderA = a.status === 'pending' ? 0 : (a.status === 'active' ? 1 : 2);
+            var orderB = b.status === 'pending' ? 0 : (b.status === 'active' ? 1 : 2);
+            return orderA - orderB;
+          });
+
+          document.getElementById('pkg-table').innerHTML = filteredPackages.map(function(p) {
+            var dateFormatted = p.end_date ? new Date(p.end_date).toLocaleDateString('ar-IQ') : '-';
+            var statusText = p.status === 'active' ? '⚡ نشطة' : (p.status === 'completed' ? '🎉 مكتملة' : '⏳ قيد الانتظار للموافقة');
+            var cancelBtn = '<button data-id="' + p.id + '" data-name="' + (p.plan_name || '') + '" class="btn-action btn-danger act-pkg-cancel" style="padding:4px 10px; font-size:11px; margin-top:5px;"><i class="fa-solid fa-rotate-left"></i> إلغاء الباقة</button>';
+            var actionBtn = p.status === 'pending'
+              ? '<button data-id="' + p.id + '" class="btn-approve act-pkg-approve"><i class="fa-solid fa-check"></i> موافقة وتفعيل</button><br>' + cancelBtn
+              : (p.status === 'active' ? cancelBtn : '-');
+
+            return '<tr>' +
+                     '<td><strong>' + p.phone_number + '</strong></td>' +
+                     '<td><strong style="color:var(--accent-gold);">' + p.plan_name + '</strong></td>' +
+                     '<td>' + Number(p.invested_amount).toLocaleString() + ' د.ع</td>' +
+                     '<td><strong style="color:var(--success);">' + Number(p.expected_payout).toLocaleString() + ' د.ع</strong></td>' +
+                     '<td>' + dateFormatted + '</td>' +
+                     '<td><span class="badge-status status-' + p.status + '">' + statusText + '</span></td>' +
+                     '<td>' + actionBtn + '</td>' +
+                   '</tr>';
+          }).join('');
+        }
+
+        // دالة تصفية الباقات عند تغيير القائمة المنسدلة
+        function filterPackagesByInvestor() {
+          if (allPackagesData && allPackagesData.length > 0) {
+            renderPackagesTable(allPackagesData);
           }
         }
 
@@ -2180,6 +2253,52 @@ app.patch('/api/admin/packages/approve', authenticateAdmin, async (req, res) => 
     }
 
     res.json({ success: true, message: 'تمت الموافقة على الباقة وتفعيلها بنجاح!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// إلغاء باقة استثمارية نشطة واسترجاع المبلغ للمستثمر
+app.delete('/api/admin/packages/cancel', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.body;
+    const { data: pkg } = await supabase.from('investment_packages').select('*').eq('id', id).single();
+
+    if (!pkg) return res.status(404).json({ success: false, error: 'الباقة غير موجودة' });
+
+    // إذا كانت الباقة نشطة، نحذف سجل السحب المرتبط بها (تخصيص لباقة استثمارية) لاسترجاع المبلغ
+    if (pkg.status === 'active') {
+      await supabase.from('withdrawals')
+        .delete()
+        .eq('user_id', pkg.user_id)
+        .eq('phone_number', pkg.phone_number)
+        .eq('amount', pkg.invested_amount)
+        .eq('wallet_type', 'capital')
+        .eq('payment_method', 'تخصيص لباقة استثمارية')
+        .eq('account_details', pkg.plan_name);
+    }
+
+    // حذف الباقة نهائياً
+    await supabase.from('investment_packages').delete().eq('id', id);
+
+    // إشعار المستثمر بإلغاء الباقة
+    await supabase.from('notifications').insert([{
+      user_id: pkg.user_id,
+      title: '↩️ إلغاء باقة استثمارية',
+      message: `تم إلغاء باقتك (${pkg.plan_name}) بمبلغ ${Number(pkg.invested_amount).toLocaleString()} د.ع وتم استرجاع المبلغ إلى رصيدك.`
+    }]);
+
+    const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', pkg.user_id).single();
+    if (usr) {
+      if (usr.onesignal_player_id) {
+        await sendOneSignalNotification([usr.onesignal_player_id], "↩️ إلغاء باقة استثمارية", `تم إلغاء باقتك (${pkg.plan_name}) واسترجاع مبلغ ${Number(pkg.invested_amount).toLocaleString()} د.ع إلى رصيدك.`);
+      }
+      if (usr.telegram_chat_id) {
+        await sendTelegramNotification(usr.telegram_chat_id, `↩️ <b>إلغاء باقة استثمارية</b>\n\nتم إلغاء باقتك <b>${pkg.plan_name}</b> وتم استرجاع مبلغ <b>${Number(pkg.invested_amount).toLocaleString()} د.ع</b> إلى رصيدك بنجاح.`);
+      }
+    }
+
+    res.json({ success: true, message: 'تم إلغاء الباقة واسترجاع المبلغ للمستثمر بنجاح!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
