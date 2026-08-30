@@ -1,22 +1,24 @@
 {
-  "name": "maksab-backend",
+  "name": "maksab-investment-platform",
   "version": "1.0.0",
-  "description": "منصة مكسب الاستثمارية",
-  "main": "index.js",
+  "description": "منصة مَكْسَب الاستثمارية - Fintech",
+  "type": "module",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.0",
-    "@capacitor/cli": "^8.5.0",
-    "@capacitor/core": "^8.5.0",
-    "@supabase/supabase-js": "^2.39.0",
-    "axios": "^1.19.0",
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3"
+    "@supabase/supabase-js": "^2.45.0",
+    "axios": "^1.7.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.21.3"
   }
 }
