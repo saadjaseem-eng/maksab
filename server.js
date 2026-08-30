@@ -1060,6 +1060,10 @@ app.get('/app', (req, res) => {
         function copyRefLink() { navigator.clipboard.writeText(document.getElementById('ref-link').value); alert('تم نسخ الرابط!'); }
         function logout() { localStorage.clear(); location.reload(); }
 
+        // التحقق التلقائي عند تحميل الصفحة: إذا كان المستثمر مسجلاً مسبقاً، انتقل مباشرة للوحة التحكم
+        if (authToken && currentUser) {
+          initDashboard();
+        }
         fetchAnnouncementBanner();
       </script>
     </body>
