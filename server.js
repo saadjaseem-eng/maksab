@@ -77,6 +77,16 @@ let packageStatusMemory = {
   'الباقة السنوية الماسية VIP': true
 };
 
+// ذاكرة مؤقتة لأسعار وعوائد الباقات (قابلة للتعديل من لوحة الإدارة)
+let packagePricingMemory = {
+  'الباقة الفضية الشهرية': { price: 100000, payout: 120000, months: 1 },
+  'الباقة الذهبية الشهرية': { price: 250000, payout: 300000, months: 1 },
+  'الباقة الماسية الشهرية': { price: 500000, payout: 600000, months: 1 },
+  'الباقة السنوية الفضية': { price: 1000000, payout: 1600000, months: 12 },
+  'الباقة السنوية الذهبية': { price: 2500000, payout: 4200000, months: 12 },
+  'الباقة السنوية الماسية VIP': { price: 5000000, payout: 9000000, months: 12 }
+};
+
 // ذاكرة مؤقتة للشريط الإعلاني للمستثمرين
 let announcementMemory = {
   active: true,
@@ -107,10 +117,349 @@ async function sendOneSignalNotification(playerIds, title, message) {
 }
 
 // ==========================================
-// المسار الرئيسي (إعادة توجيه تلقائي لواجهة المستثمر /app)
+// الصفحة الرئيسية — صفحة هبوط تسويقية
 // ==========================================
 app.get('/', (req, res) => {
-  res.redirect('/app');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>مَكْسَب الاستثمارية | منصة الاستثمار الذكية</title>
+      <meta name="description" content="مَكْسَب الاستثمارية — منصة استثمار عراقية توفر باقات استثمارية شهرية وسنوية بعوائد مضمونة. ابدأ رحلة استثمارك اليوم.">
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Cairo', sans-serif; background: #0a0e1a; color: #e2e8f0; overflow-x: hidden; }
+        :root {
+          --accent-gold: #d4af37;
+          --accent-gold-light: #e8c860;
+          --success: #10b981;
+          --bg-dark: #0a0e1a;
+          --bg-card: #111827;
+          --border: #1e293b;
+        }
+        a { text-decoration: none; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+
+        /* Navbar */
+        nav { position: fixed; top: 0; right: 0; left: 0; z-index: 100; background: rgba(10, 14, 26, 0.95); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); padding: 15px 0; }
+        .nav-inner { display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-size: 22px; font-weight: 900; color: var(--accent-gold); display: flex; align-items: center; gap: 8px; }
+        .logo i { font-size: 26px; }
+        .nav-links { display: flex; gap: 25px; align-items: center; }
+        .nav-links a { color: #94a3b8; font-size: 14px; font-weight: 600; transition: color 0.3s; }
+        .nav-links a:hover { color: var(--accent-gold); }
+        .nav-cta { background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-light) 100%); color: #0a0e1a !important; padding: 10px 25px; border-radius: 30px; font-weight: 700; transition: transform 0.3s; }
+        .nav-cta:hover { transform: scale(1.05); color: #0a0e1a !important; }
+
+        /* Hero */
+        .hero { min-height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center; position: relative; padding: 100px 20px 60px; }
+        .hero-bg { position: absolute; top: 0; right: 0; left: 0; bottom: 0; background: radial-gradient(ellipse at 50% 0%, rgba(212, 175, 55, 0.12) 0%, transparent 60%); pointer-events: none; }
+        .hero-content { position: relative; z-index: 2; max-width: 800px; }
+        .hero-badge { display: inline-block; background: rgba(212, 175, 55, 0.1); border: 1px solid rgba(212, 175, 55, 0.3); color: var(--accent-gold); padding: 8px 20px; border-radius: 30px; font-size: 13px; font-weight: 600; margin-bottom: 25px; }
+        .hero h1 { font-size: 52px; font-weight: 900; line-height: 1.3; margin-bottom: 20px; background: linear-gradient(135deg, #fff 0%, var(--accent-gold) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .hero p { font-size: 18px; color: #94a3b8; line-height: 1.8; margin-bottom: 35px; }
+        .hero-buttons { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
+        .btn-primary { background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-light) 100%); color: #0a0e1a; padding: 16px 40px; border-radius: 30px; font-weight: 700; font-size: 16px; transition: transform 0.3s, box-shadow 0.3s; display: inline-flex; align-items: center; gap: 10px; }
+        .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(212, 175, 55, 0.3); }
+        .btn-secondary { background: transparent; color: #e2e8f0; border: 2px solid var(--border); padding: 16px 40px; border-radius: 30px; font-weight: 700; font-size: 16px; transition: border-color 0.3s; display: inline-flex; align-items: center; gap: 10px; }
+        .btn-secondary:hover { border-color: var(--accent-gold); }
+
+        /* Stats Bar */
+        .stats-bar { background: var(--bg-card); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 40px 0; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 30px; text-align: center; }
+        .stat-item .num { font-size: 36px; font-weight: 900; color: var(--accent-gold); }
+        .stat-item .label { font-size: 13px; color: #94a3b8; margin-top: 5px; }
+
+        /* Section */
+        .section { padding: 80px 0; }
+        .section-header { text-align: center; margin-bottom: 50px; }
+        .section-header h2 { font-size: 36px; font-weight: 900; margin-bottom: 15px; }
+        .section-header h2 span { color: var(--accent-gold); }
+        .section-header p { font-size: 16px; color: #94a3b8; max-width: 600px; margin: 0 auto; }
+
+        /* Packages */
+        .packages-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; }
+        .pkg-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 35px 30px; text-align: center; transition: transform 0.3s, border-color 0.3s; position: relative; }
+        .pkg-card:hover { transform: translateY(-8px); border-color: var(--accent-gold); }
+        .pkg-card.featured { border-color: var(--accent-gold); background: linear-gradient(180deg, rgba(212, 175, 55, 0.05) 0%, var(--bg-card) 100%); }
+        .pkg-card .ribbon { position: absolute; top: -12px; right: 50%; transform: translateX(50%); background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-light) 100%); color: #0a0e1a; padding: 5px 20px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+        .pkg-icon { font-size: 40px; margin-bottom: 15px; }
+        .pkg-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+        .pkg-price { font-size: 32px; font-weight: 900; color: var(--accent-gold); margin: 15px 0; }
+        .pkg-price small { font-size: 14px; font-weight: 400; color: #94a3b8; }
+        .pkg-return { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: var(--success); padding: 12px; border-radius: 12px; font-weight: 600; margin: 15px 0; }
+        .pkg-card .btn-primary { width: 100%; justify-content: center; padding: 12px; font-size: 14px; }
+
+        /* How it works */
+        .steps-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+        .step-card { text-align: center; padding: 30px 20px; }
+        .step-num { width: 60px; height: 60px; background: linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-light) 100%); color: #0a0e1a; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; margin: 0 auto 20px; }
+        .step-card h4 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+        .step-card p { font-size: 13px; color: #94a3b8; line-height: 1.7; }
+
+        /* Features */
+        .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; }
+        .feature-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 30px; transition: border-color 0.3s; }
+        .feature-card:hover { border-color: rgba(212, 175, 55, 0.5); }
+        .feature-icon { width: 50px; height: 50px; background: rgba(212, 175, 55, 0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--accent-gold); font-size: 22px; margin-bottom: 18px; }
+        .feature-card h4 { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+        .feature-card p { font-size: 14px; color: #94a3b8; line-height: 1.7; }
+
+        /* CTA */
+        .cta-section { padding: 80px 0; text-align: center; background: linear-gradient(135deg, rgba(212, 175, 55, 0.08) 0%, transparent 100%); }
+        .cta-section h2 { font-size: 36px; font-weight: 900; margin-bottom: 20px; }
+        .cta-section p { font-size: 17px; color: #94a3b8; margin-bottom: 35px; }
+
+        /* Footer */
+        footer { background: #060912; border-top: 1px solid var(--border); padding: 50px 0 30px; }
+        .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 40px; margin-bottom: 30px; }
+        .footer-col h4 { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: var(--accent-gold); }
+        .footer-col p, .footer-col a { font-size: 14px; color: #94a3b8; line-height: 2; display: block; }
+        .footer-col a:hover { color: var(--accent-gold); }
+        .footer-bottom { text-align: center; padding-top: 25px; border-top: 1px solid var(--border); font-size: 13px; color: #64748b; }
+
+        @media (max-width: 768px) {
+          .hero h1 { font-size: 32px; }
+          .hero p { font-size: 15px; }
+          .nav-links a:not(.nav-cta) { display: none; }
+          .stats-grid { grid-template-columns: repeat(2, 1fr); }
+          .packages-grid { grid-template-columns: 1fr; }
+          .steps-grid { grid-template-columns: repeat(2, 1fr); }
+          .features-grid { grid-template-columns: 1fr; }
+          .footer-grid { grid-template-columns: 1fr; }
+          .section-header h2 { font-size: 26px; }
+        }
+      </style>
+    </head>
+    <body>
+
+      <!-- Navbar -->
+      <nav>
+        <div class="container nav-inner">
+          <a href="/" class="logo"><i class="fa-solid fa-chart-line"></i> مَكْسَب</a>
+          <div class="nav-links">
+            <a href="#packages">الباقات</a>
+            <a href="#how">كيف تعمل</a>
+            <a href="#features">المزايا</a>
+            <a href="/app" class="nav-cta">دخول المستثمر</a>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Hero -->
+      <section class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+          <span class="hero-badge"><i class="fa-solid fa-shield-halved"></i> منصة استثمار عراقية موثوقة</span>
+          <h1>استثمر بذكاء<br>اكسب بثقة</h1>
+          <p>مَكْسَب الاستثمارية تقدم باقات استثمارية شهرية وسنوية بعوائد مضمونة، مع نظام إشعارات فوري وتحكم كامل في أموالك عبر منصة آمنة وسهلة الاستخدام.</p>
+          <div class="hero-buttons">
+            <a href="/app" class="btn-primary"><i class="fa-solid fa-rocket"></i> ابدأ الاستثمار الآن</a>
+            <a href="#packages" class="btn-secondary"><i class="fa-solid fa-eye"></i> استعرض الباقات</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stats -->
+      <section class="stats-bar">
+        <div class="container">
+          <div class="stats-grid">
+            <div class="stat-item">
+              <div class="num">6</div>
+              <div class="label">باقات استثمارية</div>
+            </div>
+            <div class="stat-item">
+              <div class="num">2%</div>
+              <div class="label">عمولة إحالة</div>
+            </div>
+            <div class="stat-item">
+              <div class="num">24/7</div>
+              <div class="label">إشعارات فورية</div>
+            </div>
+            <div class="stat-item">
+              <div class="num">100%</div>
+              <div class="label">الشفافية والأمان</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Packages -->
+      <section class="section" id="packages">
+        <div class="container">
+          <div class="section-header">
+            <h2>باقاتنا <span>الاستثمارية</span></h2>
+            <p>اختر الباقة التي تناسب أهدافك المالية — باقات شهرية سريعة العائد وباقات سنوية بعوائد أعلى</p>
+          </div>
+          <div class="packages-grid">
+            <div class="pkg-card">
+              <div class="pkg-icon">الباقة الفضية الشهرية</div>
+              <h3>الباقة الفضية</h3>
+              <div class="pkg-price">100,000 <small>د.ع</small></div>
+              <div class="pkg-return">عائد شهري: 120,000 د.ع</div>
+              <a href="/app" class="btn-primary">اشترك الآن</a>
+            </div>
+            <div class="pkg-card featured">
+              <div class="ribbon">الأكثر شعبية</div>
+              <div class="pkg-icon">الباقة الذهبية الشهرية</div>
+              <h3>الباقة الذهبية</h3>
+              <div class="pkg-price">250,000 <small>د.ع</small></div>
+              <div class="pkg-return">عائد شهري: 300,000 د.ع</div>
+              <a href="/app" class="btn-primary">اشترك الآن</a>
+            </div>
+            <div class="pkg-card">
+              <div class="pkg-icon">الباقة الماسية الشهرية</div>
+              <h3>الباقة الماسية</h3>
+              <div class="pkg-price">500,000 <small>د.ع</small></div>
+              <div class="pkg-return">عائد شهري: 600,000 د.ع</div>
+              <a href="/app" class="btn-primary">اشترك الآن</a>
+            </div>
+            <div class="pkg-card">
+              <div class="pkg-icon">الباقة السنوية الفضية</div>
+              <h3>الباقة السنوية الفضية</h3>
+              <div class="pkg-price">1,000,000 <small>د.ع</small></div>
+              <div class="pkg-return">عائد سنوي: 1,600,000 د.ع</div>
+              <a href="/app" class="btn-primary">اشترك الآن</a>
+            </div>
+            <div class="pkg-card">
+              <div class="pkg-icon">الباقة السنوية الذهبية</div>
+              <h3>الباقة السنوية الذهبية</h3>
+              <div class="pkg-price">2,500,000 <small>د.ع</small></div>
+              <div class="pkg-return">عائد سنوي: 4,200,000 د.ع</div>
+              <a href="/app" class="btn-primary">اشترك الآن</a>
+            </div>
+            <div class="pkg-card featured">
+              <div class="ribbon">VIP</div>
+              <div class="pkg-icon">الباقة السنوية الماسية VIP</div>
+              <h3>الباقة الماسية VIP</h3>
+              <div class="pkg-price">5,000,000 <small>د.ع</small></div>
+              <div class="pkg-return">عائد سنوي: 9,000,000 د.ع</div>
+              <a href="/app" class="btn-primary">اشترك الآن</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- How it works -->
+      <section class="section" id="how" style="background: #0d1220;">
+        <div class="container">
+          <div class="section-header">
+            <h2>كيف <span>تعمل</span> المنصة؟</h2>
+            <p>أربع خطوات بسيطة تفصلك عن بداية رحلة استثمارك</p>
+          </div>
+          <div class="steps-grid">
+            <div class="step-card">
+              <div class="step-num">1</div>
+              <h4>إنشاء حساب</h4>
+              <p>سجل في المنصة برقم هاتفك وكلمة مرور خاصة بك في أقل من دقيقة.</p>
+            </div>
+            <div class="step-card">
+              <div class="step-num">2</div>
+              <h4>شحن الرصيد</h4>
+              <p>استانف رصيدك بعملية تحويل بسيطة مع إرفاق إشعار الدفع.</p>
+            </div>
+            <div class="step-card">
+              <div class="step-num">3</div>
+              <h4>اختيار باقة</h4>
+              <p>اختر الباقة المناسبة لك من بين باقاتنا الشهرية والسنوية وابدأ الاستثمار.</p>
+            </div>
+            <div class="step-card">
+              <div class="step-num">4</div>
+              <h4>استلام العائد</h4>
+              <p>عند اكتمال مدة الباقة، تتم إداع أرباحك مباشرة إلى رصيدك مع إشعار فوري.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section class="section" id="features">
+        <div class="container">
+          <div class="section-header">
+            <h2>لماذا <span>مَكْسَب</span>؟</h2>
+            <p>مزايا تجعل استثمارك آمنا ومريحا</p>
+          </div>
+          <div class="features-grid">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
+              <h4>أمان وحماية</h4>
+              <p>نظام حماية متعدد الطبقات مع تشفير كامل للبيانات وتوثيق الهوية (KYC) لضمان أمان حسابك.</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-bell"></i></div>
+              <h4>إشعارات فورية</h4>
+              <p>تلقي تنبيهات فورية عبر تلجرام وتطبيق الموقع عن كل عملية في حسابك مباشرة.</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-share-nodes"></i></div>
+              <h4>نظام الإحالات</h4>
+              <p>احصل على عمولة 2% من أول شحن لكل مستثمر يسجل عبر رابطك الخاص.</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-chart-line"></i></div>
+              <h4>متابعة مستمرة</h4>
+              <p>شاهد تقدم باقاتك بالزمن مع عداد تنازلي ونسبة اكتمال لكل باقة نشطة.</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-mobile-screen"></i></div>
+              <h4>تطبيق محمول (PWA)</h4>
+              <p>ثبت المنصة على هاتفك للوصول السريع وتجربة أصلية بدون متصفح مع تحديثات تلقائية.</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-clock"></i></div>
+              <h4>إشعار قبل الاكتمال</h4>
+              <p>نظام ذكي ينبهك قبل 24 ساعة من اكتمال مدة باقتك لتكون على اطلاع دائم.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA -->
+      <section class="cta-section">
+        <div class="container">
+          <h2>جاهز لبدء رحلتك؟</h2>
+          <p>انضم إلى مَكْسَب الاستثمارية اليوم وابدأ في تحقيق أهدافك المالية</p>
+          <a href="/app" class="btn-primary"><i class="fa-solid fa-rocket"></i> دخول منصة المستثمر</a>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer>
+        <div class="container">
+          <div class="footer-grid">
+            <div class="footer-col">
+              <h4>مَكْسَب الاستثمارية</h4>
+              <p>منصة استثمار عراقية توفر باقات استثمارية بعوائد مضمونة، مع نظام أمن متطور وإشعارات فورية.</p>
+            </div>
+            <div class="footer-col">
+              <h4>روابط سريعة</h4>
+              <a href="/app">دخول المستثمر</a>
+              <a href="/#packages">الباقات</a>
+              <a href="/#how">كيف تعمل</a>
+              <a href="/#features">المزايا</a>
+            </div>
+            <div class="footer-col">
+              <h4>الدعم</h4>
+              <a href="/app">تفعيل إشعارات تلجرام</a>
+              <a href="/app">رفع وثيقة الهوية</a>
+              <a href="/app">شبكة الإحالات</a>
+            </div>
+          </div>
+          <div class="footer-bottom">
+            &copy; 2025 مَكْسَب الاستثمارية — جميع الحقوق محفوظة
+          </div>
+        </div>
+      </footer>
+
+    </body>
+    </html>
+  `);
 });
 
 // ==========================================
@@ -597,7 +946,8 @@ app.get('/app', (req, res) => {
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
               <div class="section-card">
                 <h3>شحن رصيد لشراء الباقات</h3>
-                <input type="number" id="deposit-amount" placeholder="المبلغ بالدينار العراقي" style="margin-bottom:10px;">
+                <input type="number" id="deposit-amount" placeholder="المبلغ بالدينار العراقي" min="100000" max="1000000" style="margin-bottom:5px;">
+                <p style="font-size:11px; color:var(--text-muted); margin:0 0 10px 0;">📊 الحد الأدنى للشحن: <strong style="color:var(--accent-gold);">100,000 د.ع</strong> — الحد الأقصى: <strong style="color:var(--accent-gold);">1,000,000 د.ع</strong></p>
                 <input type="text" id="deposit-ref" placeholder="رقم التحويل (Ref ID)" style="margin-bottom:10px;">
                 <input type="file" id="deposit-file" accept="image/*" style="margin-bottom:10px;">
                 <button class="btn-gold" onclick="submitDeposit()" id="btn-dep">تأكيد شحن الرصيد</button>
@@ -654,6 +1004,21 @@ app.get('/app', (req, res) => {
                 <input type="text" id="ref-link" readonly style="color:var(--accent-gold);">
                 <button onclick="copyRefLink()" style="background:#0f172a; border:1px solid var(--accent-gold); color:var(--accent-gold); padding:0 15px; border-radius:8px; cursor:pointer;">نسخ</button>
               </div>
+            </div>
+
+            <div class="section-card">
+              <h3><i class="fa-solid fa-share-nodes"></i> شبكة الإحالات</h3>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:15px;">
+                <div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); text-align:center;">
+                  <div style="font-size:26px; font-weight:bold; color:var(--accent-gold);" id="ref-count">0</div>
+                  <div style="font-size:12px; color:var(--text-muted);">عدد المستثمرين المحالين</div>
+                </div>
+                <div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); text-align:center;">
+                  <div style="font-size:26px; font-weight:bold; color:var(--success-green);" id="ref-commissions">0 د.ع</div>
+                  <div style="font-size:12px; color:var(--text-muted);">إجمالي عمولات الإحالة (2%)</div>
+                </div>
+              </div>
+              <div id="ref-network-list" style="max-height:300px; overflow-y:auto;"></div>
             </div>
 
             <div class="section-card" style="border:1px solid var(--accent-gold);">
@@ -830,6 +1195,35 @@ app.get('/app', (req, res) => {
           } catch(e) { console.error(e); }
         }
 
+        async function fetchPackagePricing() {
+          try {
+            var res = await fetch('/api/packages/pricing');
+            var data = await res.json();
+            if (!data.success || !data.data) return;
+            var pricing = data.data;
+            var pkgNames = Object.keys(pricing);
+
+            pkgNames.forEach(function(name) {
+              var p = pricing[name];
+              var card = document.getElementById('card-' + name);
+              if (!card) return;
+
+              var priceEl = card.querySelector('.package-price');
+              var returnEl = card.querySelector('.package-return');
+              var btn = document.getElementById('btn-sub-' + name);
+
+              if (priceEl) priceEl.innerText = Number(p.price).toLocaleString() + ' \u062f.\u0639';
+              if (returnEl) {
+                var period = p.months === 12 ? '\u0633\u0646\u0629' : '\u0634\u0647\u0631';
+                returnEl.innerText = '\u0627\u0644\u0639\u0627\u0626\u062f \u0628\u0639\u062f ' + period + ': ' + Number(p.payout).toLocaleString() + ' \u062f.\u0639';
+              }
+              if (btn) {
+                btn.setAttribute('onclick', "openPackageModal('" + name + "', " + p.price + ", " + p.payout + ", " + p.months + ")");
+              }
+            });
+          } catch(e) { console.error('pricing fetch error', e); }
+        }
+
         async function fetchAnnouncementBanner() {
           try {
             var res = await fetch('/api/announcement');
@@ -860,9 +1254,12 @@ app.get('/app', (req, res) => {
           loadUserData();
           loadUserPackages();
           loadUserNotifications();
+          loadReferralNetwork();
           fetchSystemSettings();
+          fetchPackagePricing();
           fetchAnnouncementBanner();
           setInterval(fetchSystemSettings, 10000);
+          setInterval(fetchPackagePricing, 15000);
           setInterval(fetchAnnouncementBanner, 15000);
         }
 
@@ -1118,7 +1515,10 @@ app.get('/app', (req, res) => {
           var fileInput = document.getElementById('deposit-file');
           var msg = document.getElementById('deposit-msg');
 
-          if (!amount || !ref || fileInput.files.length === 0) { msg.innerText = 'املأ التفاصيل والإشعار'; return; }
+          if (!amount || !ref || fileInput.files.length === 0) { msg.innerText = 'أملأ التفاصيل والإشعار'; msg.style.color = 'var(--danger-red)'; return; }
+          var numAmount = parseFloat(amount);
+          if (numAmount < 100000) { msg.innerText = '❌ الحد الأدنى للشحن هو 100,000 د.ع'; msg.style.color = 'var(--danger-red)'; return; }
+          if (numAmount > 1000000) { msg.innerText = '❌ الحد الأقصى للشحن هو 1,000,000 د.ع'; msg.style.color = 'var(--danger-red)'; return; }
           msg.innerText = 'جاري رفع الإشعار...';
 
           try {
@@ -1147,6 +1547,38 @@ app.get('/app', (req, res) => {
         }
 
         function copyRefLink() { navigator.clipboard.writeText(document.getElementById('ref-link').value); alert('تم نسخ الرابط!'); }
+
+        async function loadReferralNetwork() {
+          try {
+            var data = await fetchWithAuth('/api/user/referrals');
+            if (!data.success) return;
+
+            document.getElementById('ref-count').innerText = data.referral_count || 0;
+            document.getElementById('ref-commissions').innerText = Number(data.total_commissions || 0).toLocaleString() + ' د.ع';
+
+            var list = document.getElementById('ref-network-list');
+            var referrals = data.data || [];
+
+            if (referrals.length === 0) {
+              list.innerHTML = '<div style="text-align:center; padding:25px; color:var(--text-muted); font-size:13px;"><i class="fa-solid fa-user-plus" style="font-size:28px; margin-bottom:8px; display:block; opacity:0.5;"></i>لا يوجد مستثمرين محالين بعد. شارك رابطك لكسب عمولات 2% من أول شحن لكل مستثمر جديد.</div>';
+              return;
+            }
+
+            list.innerHTML = referrals.map(function(r) {
+              var kycBadge = r.kyc_status === 'verified' ? '<span style="color:var(--success-green); font-size:11px;">✅ موثق</span>' : (r.kyc_status === 'pending' ? '<span style="color:var(--warning); font-size:11px;">⏳ بانتظار</span>' : '<span style="color:var(--text-muted); font-size:11px;">لم يوثق</span>');
+              var dateStr = r.created_at ? new Date(r.created_at).toLocaleDateString('ar-EG') : '';
+              var displayName = r.full_name || ('مستثمر #' + r.id);
+              return '<div class="history-item">' +
+                       '<div style="display:flex; align-items:center; gap:10px;">' +
+                         '<i class="fa-solid fa-user" style="color:var(--accent-gold); font-size:14px;"></i>' +
+                         '<div><strong>' + displayName + '</strong><br><small style="color:var(--text-muted);">' + dateStr + '</small></div>' +
+                       '</div>' +
+                       kycBadge +
+                     '</div>';
+            }).join('');
+          } catch(e) { console.error('referral load error', e); }
+        }
+
         function logout() { localStorage.clear(); location.reload(); }
 
         // التحقق التلقائي عند تحميل الصفحة: إذا كان المستثمر مسجلاً مسبقاً، انتقل مباشرة للوحة التحكم
@@ -1360,6 +1792,16 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             </div>
           </div>
 
+          <div class="card-panel" id="admin-pricing-section" style="display:none;">
+            <h3><i class="fa-solid fa-tags"></i> إدارة أسعار وعوائد الباقات (صلاحية المدير الرئيسي)</h3>
+            <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">قم بتعديل سعر اشتراك كل باقة والعائد المتوقع منها. سيتم تحديث بطاقات الباقات لدى المستثمرين تلقائيًا.</p>
+            <div id="admin-pricing-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:15px; margin-bottom:20px;"></div>
+            <div style="display:flex; align-items:center; gap:15px;">
+              <button id="btn-save-pricing" class="btn-gold-action" style="max-width:280px;"><i class="fa-solid fa-floppy-disk"></i> حفظ التعديلات</button>
+              <span id="pricing-msg" style="font-size:13px; font-weight:bold;"></span>
+            </div>
+          </div>
+
           <div class="card-panel" id="super-admin-section">
             <h3><i class="fa-solid fa-toggle-on"></i> التحكم في تشغيل وإيقاف الباقات يدوياً (صلاحية المدير الرئيسي)</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">قم بإيقاف أي باقة مؤقتاً لتظهر للمستثمرين كمتوقفة ولا يمكن الاشتراك بها، ثم أعد تفعيلها متى شئت.</p>
@@ -1551,6 +1993,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
           document.getElementById('btn-trigger-payouts').addEventListener('click', triggerPackagePayouts);
           document.getElementById('btn-send-broadcast').addEventListener('click', sendBroadcastMessage);
           document.getElementById('btn-save-announcement').addEventListener('click', saveAnnouncementSettings);
+          document.getElementById('btn-save-pricing').addEventListener('click', savePricingSettings);
           document.getElementById('btn-submit-balance').addEventListener('click', submitBalanceAdjustment);
           document.getElementById('btn-close-balance').addEventListener('click', closeBalanceModal);
 
@@ -1665,6 +2108,66 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
           }
         }
 
+        var adminPricingNames = [
+          'الباقة الفضية الشهرية', 'الباقة الذهبية الشهرية', 'الباقة الماسية الشهرية',
+          'الباقة السنوية الفضية', 'الباقة السنوية الذهبية', 'الباقة السنوية الماسية VIP'
+        ];
+
+        async function loadPricingSettings() {
+          try {
+            var res = await fetch('/api/packages/pricing');
+            var data = await res.json();
+            if (!data.success || !data.data) return;
+            var pricing = data.data;
+
+            document.getElementById('admin-pricing-grid').innerHTML = adminPricingNames.map(function(name) {
+              var p = pricing[name] || { price: 0, payout: 0 };
+              return '<div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color);">' +
+                       '<strong style="color:var(--accent-gold); font-size:13px; display:block; margin-bottom:12px;">' + name + '</strong>' +
+                       '<label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">سعر الاشتراك (د.ع)</label>' +
+                       '<input type="number" data-pkg="' + name + '" data-field="price" value="' + p.price + '" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border-color); background:#1e293b; color:white; outline:none; margin-bottom:10px;">' +
+                       '<label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">العائد المتوقع (د.ع)</label>' +
+                       '<input type="number" data-pkg="' + name + '" data-field="payout" value="' + p.payout + '" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border-color); background:#1e293b; color:white; outline:none;">' +
+                     '</div>';
+            }).join('');
+          } catch(e) { console.error('pricing load error', e); }
+        }
+
+        async function savePricingSettings() {
+          var msgEl = document.getElementById('pricing-msg');
+          var inputs = document.querySelectorAll('#admin-pricing-grid input[data-pkg]');
+          var pricing = {};
+
+          inputs.forEach(function(inp) {
+            var pkg = inp.getAttribute('data-pkg');
+            var field = inp.getAttribute('data-field');
+            if (!pricing[pkg]) pricing[pkg] = {};
+            pricing[pkg][field] = inp.value;
+          });
+
+          msgEl.innerText = 'جاري حفظ الأسعار...';
+          msgEl.style.color = 'var(--warning)';
+
+          try {
+            var res = await fetch('/api/admin/packages/pricing', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+              body: JSON.stringify({ pricing: pricing })
+            });
+            var data = await res.json();
+            if (data.success) {
+              msgEl.innerText = '✅ ' + data.message;
+              msgEl.style.color = 'var(--success)';
+            } else {
+              msgEl.innerText = '❌ ' + data.error;
+              msgEl.style.color = 'var(--danger)';
+            }
+          } catch(e) {
+            msgEl.innerText = '❌ خطأ في الاتصال';
+            msgEl.style.color = 'var(--danger)';
+          }
+        }
+
         function showAdmin() {
           document.getElementById('admin-auth').style.display = 'none';
           document.getElementById('admin-dash').style.display = 'block';
@@ -1672,9 +2175,11 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
           if (adminRole === 'super_admin') {
             document.getElementById('admin-role-badge').innerText = 'صلاحيات كاملة: المدير الرئيسي (Super Admin)';
             document.getElementById('super-admin-section').style.display = 'block';
+            document.getElementById('admin-pricing-section').style.display = 'block';
           } else {
             document.getElementById('admin-role-badge').innerText = 'صلاحيات محدودة: مشرف مساعد (Moderator)';
             document.getElementById('super-admin-section').style.display = 'none';
+            document.getElementById('admin-pricing-section').style.display = 'none';
           }
 
           loadAdminData();
@@ -1722,6 +2227,8 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
                          '</button>' +
                        '</div>';
               }).join('');
+
+              loadPricingSettings();
             }
 
             var resDep = await fetch('/api/admin/deposits', { headers: headers });
@@ -2172,6 +2679,37 @@ app.get('/api/packages/settings', (req, res) => {
   res.json({ success: true, data: packageStatusMemory });
 });
 
+// ==========================================
+// API: جلب أسعار وعوائد الباقات (عام للمستثمرين)
+// ==========================================
+app.get('/api/packages/pricing', (req, res) => {
+  res.json({ success: true, data: packagePricingMemory });
+});
+
+// ==========================================
+// API: حفظ أسعار وعوائد الباقات (Super Admin فقط)
+// ==========================================
+app.post('/api/admin/packages/pricing', authenticateAdmin, requireSuperAdmin, (req, res) => {
+  try {
+    const { pricing } = req.body;
+    if (!pricing || typeof pricing !== 'object') {
+      return res.status(400).json({ success: false, error: 'بيانات الأسعار غير صحيحة.' });
+    }
+    for (const [pkgName, vals] of Object.entries(pricing)) {
+      if (packagePricingMemory[pkgName]) {
+        const price = parseFloat(vals.price);
+        const payout = parseFloat(vals.payout);
+        if (!isNaN(price) && price > 0 && !isNaN(payout) && payout > 0) {
+          packagePricingMemory[pkgName] = { price, payout, months: packagePricingMemory[pkgName].months };
+        }
+      }
+    }
+    res.json({ success: true, message: 'تم تحديث أسعار وعوائد الباقات بنجاح!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/announcement', (req, res) => {
   res.json({ success: true, data: announcementMemory });
 });
@@ -2496,15 +3034,30 @@ app.get('/api/user/packages', authenticateUser, async (req, res) => {
   res.json({ success: true, data: data || [] });
 });
 
+const MIN_DEPOSIT_AMOUNT = 100000;
+const MAX_DEPOSIT_AMOUNT = 1000000;
+
 app.post('/api/deposits', authenticateUser, async (req, res) => {
   try {
     const { amount, transaction_ref, receipt_url, wallet_type } = req.body;
+    const numAmount = parseFloat(amount);
+
+    if (!numAmount || isNaN(numAmount)) {
+      return res.status(400).json({ success: false, error: 'يرجى إدخال مبلغ صحيح.' });
+    }
+    if (numAmount < MIN_DEPOSIT_AMOUNT) {
+      return res.status(400).json({ success: false, error: `الحد الأدنى للشحن هو ${MIN_DEPOSIT_AMOUNT.toLocaleString()} د.ع.` });
+    }
+    if (numAmount > MAX_DEPOSIT_AMOUNT) {
+      return res.status(400).json({ success: false, error: `الحد الأقصى للشحن هو ${MAX_DEPOSIT_AMOUNT.toLocaleString()} د.ع.` });
+    }
+
     const publicUrl = await uploadToStorage(receipt_url);
 
     const { error } = await supabase.from('deposits').insert([{
       user_id: req.user.id,
       phone_number: req.user.phone,
-      amount: parseFloat(amount),
+      amount: numAmount,
       transaction_ref,
       receipt_url: publicUrl,
       status: 'pending',
@@ -2589,6 +3142,37 @@ app.get('/api/user/transactions', authenticateUser, async (req, res) => {
     });
 
     res.json({ success: true, data: allTransactions, total_profit: totalRealizedProfit });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// API: شبكة الإحالات — قائمة المسجلين عبر رابط المستثمر + إجمالي العمولات
+// ==========================================
+app.get('/api/user/referrals', authenticateUser, async (req, res) => {
+  try {
+    const { data: referredUsers } = await supabase.from('users')
+      .select('id, full_name, phone_number, kyc_status, created_at')
+      .eq('referred_by', req.user.id)
+      .order('created_at', { ascending: false });
+
+    const { data: commissionDeposits } = await supabase.from('deposits')
+      .select('amount, status')
+      .eq('user_id', req.user.id)
+      .like('transaction_ref', 'COMMISSION_%');
+
+    let totalCommissions = 0;
+    (commissionDeposits || []).forEach(function(d) {
+      if (d.status === 'approved') totalCommissions += Number(d.amount);
+    });
+
+    res.json({
+      success: true,
+      data: referredUsers || [],
+      total_commissions: totalCommissions,
+      referral_count: (referredUsers || []).length
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -2917,6 +3501,69 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, requireSuperAdmin, asy
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ==========================================
+// إشعار قبل اكتمال الباقة بـ 24 ساعة (فحص دوري كل ساعة)
+// ==========================================
+const preCompletionNotifiedSet = new Set();
+
+async function checkPreCompletionPackages() {
+  try {
+    const now = new Date();
+    const twentyFourHoursLater = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    const { data: activePackages } = await supabase.from('investment_packages')
+      .select('id, user_id, plan_name, invested_amount, expected_payout, end_date')
+      .eq('status', 'active')
+      .not('end_date', 'is', null);
+
+    if (!activePackages || activePackages.length === 0) return;
+
+    for (const pkg of activePackages) {
+      if (preCompletionNotifiedSet.has(pkg.id)) continue;
+
+      const endDate = new Date(pkg.end_date);
+      if (endDate > now && endDate <= twentyFourHoursLater) {
+        const { data: usr } = await supabase.from('users')
+          .select('phone_number, telegram_chat_id, onesignal_player_id')
+          .eq('id', pkg.user_id)
+          .single();
+
+        if (usr) {
+          const notifTitle = '⏰ باقتك على وشك الاكتمال';
+          const notifMsg = `باقتك (${pkg.plan_name}) ستكتمل خلال 24 ساعة. العائد المتوقع: ${Number(pkg.expected_payout).toLocaleString()} د.ع. تابع لوحة التحكم لمتابعة الصرف.`;
+
+          await supabase.from('notifications').insert([{
+            user_id: pkg.user_id,
+            title: notifTitle,
+            message: notifMsg
+          }]);
+
+          if (usr.onesignal_player_id) {
+            await sendOneSignalNotification([usr.onesignal_player_id], notifTitle, notifMsg);
+          }
+          if (usr.telegram_chat_id) {
+            await sendTelegramNotification(usr.telegram_chat_id, `⏰ <b>باقتك على وشك الاكتمال!</b>\n\nباقتك <b>${pkg.plan_name}</b> ستكتمل خلال 24 ساعة.\nالعائد المتوقع: <b>${Number(pkg.expected_payout).toLocaleString()} د.ع</b>\n\nتابع لوحة التحكم لمتابعة عملية الصرف.`);
+          }
+
+          preCompletionNotifiedSet.add(pkg.id);
+          console.log(`🔔 تم إرسال إشعار قبل الاكتمال للباقة ${pkg.id} (${pkg.plan_name})`);
+        }
+      }
+    }
+
+    // تنظيف الذاكرة من الباقات المكتملة
+    for (const id of preCompletionNotifiedSet) {
+      const pkg = activePackages.find(p => p.id === id);
+      if (!pkg) preCompletionNotifiedSet.delete(id);
+    }
+  } catch (err) {
+    console.error('❌ خطأ في فحص إشعارات قبل الاكتمال:', err.message);
+  }
+}
+
+setInterval(checkPreCompletionPackages, 60 * 60 * 1000);
+setTimeout(checkPreCompletionPackages, 30 * 1000);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🔒 السيرفر المحصن يعمل بنجاح وبإدارة التنفيذي ${EXECUTIVE_DIRECTOR} على: https://maksab-production-6736.up.railway.app`));
