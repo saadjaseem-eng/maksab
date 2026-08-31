@@ -501,6 +501,10 @@ app.get('/app', (req, res) => {
                 <h4 id="available-profit" style="color:var(--accent-gold); margin:0;">0</h4>
               </div>
             </div>
+            <div style="margin-top:12px; padding:10px 14px; background:rgba(212,175,55,0.1); border:1px solid rgba(212,175,55,0.3); border-radius:10px; display:flex; justify-content:space-between; align-items:center;">
+              <div style="font-size:13px; color:var(--text-muted);"><i class="fa-solid fa-chart-line"></i> إجمالي الأرباح المحققة منذ بداية الحساب</div>
+              <div id="total-realized-profit" style="font-size:18px; font-weight:bold; color:var(--accent-gold);">0</div>
+            </div>
           </div>
 
           <div class="tab-bar">
@@ -614,7 +618,15 @@ app.get('/app', (req, res) => {
             </div>
 
             <div class="section-card">
-              <h3>سجل المعاملات الموثقة</h3>
+              <h3><i class="fa-solid fa-list-check"></i> السجل الموحد لجميع المعاملات</h3>
+              <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                <select id="tx-filter" onchange="renderTxList()" style="flex:1; min-width:150px; padding:8px; background:#0f172a; border:1px solid var(--border-color); color:var(--text-light); border-radius:8px;">
+                  <option value="all">جميع المعاملات</option>
+                  <option value="deposit">الشحنات فقط</option>
+                  <option value="withdrawal">السحوبات فقط</option>
+                  <option value="package">الباقات الاستثمارية فقط</option>
+                </select>
+              </div>
               <div id="user-history"></div>
             </div>
           </div>
@@ -643,6 +655,13 @@ app.get('/app', (req, res) => {
                 <button onclick="copyRefLink()" style="background:#0f172a; border:1px solid var(--accent-gold); color:var(--accent-gold); padding:0 15px; border-radius:8px; cursor:pointer;">نسخ</button>
               </div>
             </div>
+
+            <div class="section-card" style="border:1px solid var(--accent-gold);">
+              <h3><i class="fa-solid fa-mobile-screen"></i> تثبيت التطبيق على جهازك</h3>
+              <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">ثبّت تطبيق مكسب الاستثمارية على هاتفك للوصول السريع وتجربة أصلية بدون متصفح.</p>
+              <button id="pwa-install-btn" class="btn-gold" style="display:none; width:100%;"><i class="fa-solid fa-download"></i> تثبيت التطبيق الآن</button>
+              <p id="pwa-install-status" style="font-size:12px; color:var(--text-muted); margin-top:8px; text-align:center;"></p>
+            </div>
           </div>
         </div>
       </div>
@@ -670,6 +689,38 @@ app.get('/app', (req, res) => {
             location.reload();
           });
         }
+
+        // PWA Install Prompt — التقاط حدث beforeinstallprompt وعرض زر التثبيت
+        var deferredInstallPrompt = null;
+        window.addEventListener('beforeinstallprompt', function(e) {
+          e.preventDefault();
+          deferredInstallPrompt = e;
+          var btn = document.getElementById('pwa-install-btn');
+          var status = document.getElementById('pwa-install-status');
+          if (btn) {
+            btn.style.display = 'block';
+            btn.onclick = function() {
+              if (!deferredInstallPrompt) return;
+              deferredInstallPrompt.prompt();
+              deferredInstallPrompt.userChoice.then(function(choice) {
+                if (choice.outcome === 'accepted') {
+                  if (status) status.innerText = '✅ تم تثبيت التطبيق بنجاح!';
+                } else {
+                  if (status) status.innerText = 'تم رفض التثبيت. يمكنك المحاولة لاحقاً.';
+                }
+                deferredInstallPrompt = null;
+                btn.style.display = 'none';
+              });
+            };
+          }
+          if (status) status.innerText = 'التطبيق متاح للتثبيت على هذا الجهاز';
+        });
+        window.addEventListener('appinstalled', function() {
+          var btn = document.getElementById('pwa-install-btn');
+          var status = document.getElementById('pwa-install-status');
+          if (btn) btn.style.display = 'none';
+          if (status) status.innerText = '✅ تم تثبيت التطبيق بنجاح!';
+        });
 
         var isRegister = false;
         var authToken = localStorage.getItem('maksab_token') || null;
@@ -824,6 +875,8 @@ app.get('/app', (req, res) => {
           return res.json();
         }
 
+        var allUserTransactions = [];
+
         async function loadUserData() {
           var dataDep = await fetchWithAuth('/api/user/deposits');
           var dataWith = await fetchWithAuth('/api/user/withdrawals');
@@ -848,11 +901,47 @@ app.get('/app', (req, res) => {
           document.getElementById('active-capital').innerText = formatMoney(capital);
           document.getElementById('available-profit').innerText = formatMoney(profit);
 
-          document.getElementById('user-history').innerHTML = allTx.map(function(t) {
-            var walletName = t.wallet_type === 'profit' ? 'أرباح' : 'رأس مال';
+          // تحميل السجل الموحد + إجمالي الأرباح المحققة
+          try {
+            var txData = await fetchWithAuth('/api/user/transactions');
+            allUserTransactions = txData.data || [];
+            var totalRealized = txData.total_profit || 0;
+            var profitEl = document.getElementById('total-realized-profit');
+            if (profitEl) profitEl.innerText = formatMoney(totalRealized);
+            renderTxList();
+          } catch(e) {
+            console.log('transactions load error', e);
+          }
+        }
+
+        function renderTxList() {
+          var filter = document.getElementById('tx-filter');
+          var filterVal = filter ? filter.value : 'all';
+          var filtered = filterVal === 'all' ? allUserTransactions : allUserTransactions.filter(function(t) { return t.type === filterVal; });
+
+          if (filtered.length === 0) {
+            document.getElementById('user-history').innerHTML = '<div style="text-align:center; padding:25px; color:var(--text-muted); font-size:13px;"><i class="fa-regular fa-folder-open" style="font-size:30px; margin-bottom:8px; display:block;"></i>لا توجد معاملات لعرضها</div>';
+            return;
+          }
+
+          document.getElementById('user-history').innerHTML = filtered.map(function(t) {
+            var typeIcon = t.type === 'deposit' ? 'fa-arrow-down' : (t.type === 'withdrawal' ? 'fa-arrow-up' : 'fa-box-archive');
+            var typeColor = t.type === 'deposit' ? 'var(--success-green)' : (t.type === 'withdrawal' ? 'var(--danger-red)' : 'var(--accent-gold)');
+            var statusText = t.status === 'approved' ? '✅ مقبول' : (t.status === 'completed' ? '🎉 مكتملة' : (t.status === 'active' ? '⚡ نشطة' : (t.status === 'pending' ? '⏳ قيد الانتظار' : t.status)));
+            var amountLabel = '';
+            if (t.type === 'package') {
+              amountLabel = formatMoney(t.amount) + ' → متوقع: ' + formatMoney(t.expected_payout);
+            } else {
+              var walletName = t.wallet_type === 'profit' ? 'أرباح' : 'رأس مال';
+              amountLabel = formatMoney(t.amount) + ' (' + walletName + ')';
+            }
+            var dateStr = t.created_at ? new Date(t.created_at).toLocaleDateString('ar-EG') : '';
             return '<div class="history-item">' +
-                   '<div><strong>' + t.cat + ' (' + walletName + ')</strong><br><small>' + formatMoney(t.amount) + '</small></div>' +
-                   '<span class="badge badge-' + t.status + '">' + t.status + '</span>' +
+                   '<div style="display:flex; align-items:center; gap:10px;">' +
+                     '<i class="fa-solid ' + typeIcon + '" style="color:' + typeColor + '; font-size:16px;"></i>' +
+                     '<div><strong>' + t.label + '</strong><br><small style="color:var(--text-muted);">' + amountLabel + ' • ' + dateStr + '</small></div>' +
+                   '</div>' +
+                   '<span class="badge badge-' + t.status + '">' + statusText + '</span>' +
                    '</div>';
           }).join('');
         }
@@ -1215,6 +1304,25 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
               <h3 id="stat-users" style="color: var(--info);">0</h3>
             </div>
           </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--success);"><i class="fa-solid fa-box-archive"></i></div>
+            <div class="stat-info">
+              <p>الباقات النشطة</p>
+              <h3 id="stat-active-pkgs" style="color: var(--success);">0</h3>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;"><i class="fa-solid fa-money-bill-wave"></i></div>
+            <div class="stat-info">
+              <p>إجمالي الشحنات المقبولة</p>
+              <h3 id="stat-total-deposits" style="color: #a855f7;">0</h3>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card" style="margin-bottom:20px;">
+          <h3><i class="fa-solid fa-chart-column"></i> نظرة عامة سريعة</h3>
+          <div id="admin-chart-bars" style="display:flex; flex-direction:column; gap:12px; margin-top:10px;"></div>
         </div>
 
         <div class="admin-nav">
@@ -1675,6 +1783,39 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             document.getElementById('stat-prof').innerText = totalProf.toLocaleString() + ' د.ع';
             document.getElementById('stat-with').innerText = withCap.toLocaleString() + ' د.ع';
             document.getElementById('stat-users').innerText = users.length;
+
+            // بطاقات إحصائية إضافية: الباقات النشطة + إجمالي الشحنات المقبولة
+            var activePkgCount = packages.filter(function(p) { return p.status === 'active'; }).length;
+            var completedPkgCount = packages.filter(function(p) { return p.status === 'completed'; }).length;
+            var totalApprovedDeposits = deposits.filter(function(d) { return d.status === 'approved'; }).reduce(function(acc, d) { return acc + Number(d.amount); }, 0);
+            var elActivePkg = document.getElementById('stat-active-pkgs');
+            var elTotalDep = document.getElementById('stat-total-deposits');
+            if (elActivePkg) elActivePkg.innerText = activePkgCount + ' (' + completedPkgCount + ' مكتملة)';
+            if (elTotalDep) elTotalDep.innerText = totalApprovedDeposits.toLocaleString() + ' د.ع';
+
+            // رسم مخطط شريطي بسيط للنظرة العامة
+            var chartData = [
+              { label: 'رأس المال النشط', value: activeCap, color: 'var(--success)' },
+              { label: 'الأرباح الموزعة', value: totalProf, color: 'var(--accent-gold)' },
+              { label: 'إجمالي السحوبات', value: withCap, color: 'var(--danger)' },
+              { label: 'إجمالي الشحنات', value: totalApprovedDeposits, color: '#a855f7' }
+            ];
+            var maxVal = Math.max.apply(null, chartData.map(function(c) { return c.value; })) || 1;
+            var chartEl = document.getElementById('admin-chart-bars');
+            if (chartEl) {
+              chartEl.innerHTML = chartData.map(function(c) {
+                var pct = Math.round((c.value / maxVal) * 100);
+                return '<div>' +
+                         '<div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:12px;">' +
+                           '<span style="color:var(--text-light);">' + c.label + '</span>' +
+                           '<span style="color:' + c.color + '; font-weight:bold;">' + c.value.toLocaleString() + ' د.ع</span>' +
+                         '</div>' +
+                         '<div style="background:#0f172a; border-radius:8px; height:10px; overflow:hidden;">' +
+                           '<div style="width:' + pct + '%; height:100%; background:' + c.color + '; border-radius:8px; transition:width 0.5s ease;"></div>' +
+                         '</div>' +
+                       '</div>';
+              }).join('');
+            }
 
             document.getElementById('dep-table').innerHTML = deposits.map(function(d) {
               var walletText = d.wallet_type === 'profit' ? '<span style="color:var(--accent-gold);">أرباح/عمولة</span>' : 'رأس مال';
@@ -2143,10 +2284,26 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// نظام تحديد محاولات تسجيل الدخول الفاشلة (5 محاولات → قفل مؤقت 15 دقيقة)
+const loginAttemptsMap = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 دقيقة
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { phone_number, password } = req.body;
-    const { data: user, error } = await supabase.from('users').select('*').eq('phone_number', phone_number.trim()).single();
+    const phoneKey = phone_number ? phone_number.trim() : '';
+    const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+    const lockKey = phoneKey + '|' + clientIp;
+
+    // فحص القفل المؤقت
+    const attemptData = loginAttemptsMap.get(lockKey);
+    if (attemptData && attemptData.lockedUntil && Date.now() < attemptData.lockedUntil) {
+      const remainingMin = Math.ceil((attemptData.lockedUntil - Date.now()) / 60000);
+      return res.status(429).json({ success: false, error: 'تم قفل الحساب مؤقتاً بسبب محاولات دخول خاطئة متكررة. يرجى المحاولة بعد ' + remainingMin + ' دقيقة.' });
+    }
+
+    const { data: user, error } = await supabase.from('users').select('*').eq('phone_number', phoneKey).single();
 
     if (error || !user) throw new Error('بيانات الدخول غير صحيحة');
 
@@ -2155,7 +2312,23 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) throw new Error('بيانات الدخول غير صحيحة');
+    if (!isMatch) {
+      // تسجيل محاولة فاشلة
+      var current = loginAttemptsMap.get(lockKey) || { count: 0, lockedUntil: 0 };
+      current.count += 1;
+      if (current.count >= MAX_LOGIN_ATTEMPTS) {
+        current.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+        current.count = 0;
+        loginAttemptsMap.set(lockKey, current);
+        return res.status(429).json({ success: false, error: 'تم تجاوز الحد الأقصى لمحاولات الدخول الخاطئة. تم قفل الحساب مؤقتاً لمدة 15 دقيقة.' });
+      }
+      loginAttemptsMap.set(lockKey, current);
+      var remaining = MAX_LOGIN_ATTEMPTS - current.count;
+      throw new Error('بيانات الدخول غير صحيحة. محاولات متبقية: ' + remaining);
+    }
+
+    // تسجيل دخول ناجح → إعادة تعيين المحاولات
+    loginAttemptsMap.delete(lockKey);
 
     const token = jwt.sign({ id: user.id, phone: user.phone_number }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, phone_number: user.phone_number } });
@@ -2383,6 +2556,42 @@ app.get('/api/user/deposits', authenticateUser, async (req, res) => {
 app.get('/api/user/withdrawals', authenticateUser, async (req, res) => {
   const { data } = await supabase.from('withdrawals').select('*').eq('user_id', req.user.id);
   res.json({ success: true, data: data || [] });
+});
+
+// API موحد: سجل جميع المعاملات (شحن + سحب + باقات) + إجمالي الأرباح المحققة
+app.get('/api/user/transactions', authenticateUser, async (req, res) => {
+  try {
+    const [depRes, withRes, pkgRes] = await Promise.all([
+      supabase.from('deposits').select('*').eq('user_id', req.user.id),
+      supabase.from('withdrawals').select('*').eq('user_id', req.user.id),
+      supabase.from('investment_packages').select('*').eq('user_id', req.user.id)
+    ]);
+
+    const deposits = (depRes.data || []).map(function(d) {
+      return { id: 'dep_' + d.id, type: 'deposit', amount: Number(d.amount), wallet_type: d.wallet_type, status: d.status, created_at: d.created_at, label: 'شحن رصيد', ref: d.transaction_ref || '' };
+    });
+    const withdrawals = (withRes.data || []).map(function(w) {
+      return { id: 'with_' + w.id, type: 'withdrawal', amount: Number(w.amount), wallet_type: w.wallet_type, status: w.status, created_at: w.created_at, label: 'سحب مالي', ref: w.account_details || '' };
+    });
+    const packages = (pkgRes.data || []).map(function(p) {
+      return { id: 'pkg_' + p.id, type: 'package', amount: Number(p.invested_amount), expected_payout: Number(p.expected_payout), status: p.status, created_at: p.created_at, label: 'باقة استثمارية: ' + p.plan_name, ref: '' };
+    });
+
+    const allTransactions = deposits.concat(withdrawals).concat(packages)
+      .sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+
+    // إجمالي الأرباح المحققة = مجموع (expected_payout - invested_amount) للباقات المكتملة
+    let totalRealizedProfit = 0;
+    (pkgRes.data || []).forEach(function(p) {
+      if (p.status === 'completed') {
+        totalRealizedProfit += (Number(p.expected_payout) - Number(p.invested_amount));
+      }
+    });
+
+    res.json({ success: true, data: allTransactions, total_profit: totalRealizedProfit });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/admin/deposits', authenticateAdmin, async (req, res) => {
