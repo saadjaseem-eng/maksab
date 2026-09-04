@@ -362,14 +362,14 @@ app.get('/', (req, res) => {
             <p>اختر الباقة التي تناسب أهدافك المالية — باقات شهرية سريعة العائد وباقات سنوية بعوائد أعلى</p>
           </div>
           <div class="packages-grid">
-            <div class="pkg-card">
+            <div class="pkg-card" data-package="الباقة الفضية الشهرية">
               <div class="pkg-icon">الباقة الفضية الشهرية</div>
               <h3>الباقة الفضية</h3>
               <div class="pkg-price">100,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد شهري: 120,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
-            <div class="pkg-card featured">
+            <div class="pkg-card featured" data-package="الباقة الذهبية الشهرية">
               <div class="ribbon">الأكثر شعبية</div>
               <div class="pkg-icon">الباقة الذهبية الشهرية</div>
               <h3>الباقة الذهبية</h3>
@@ -377,28 +377,28 @@ app.get('/', (req, res) => {
               <div class="pkg-return">عائد شهري: 300,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
-            <div class="pkg-card">
+            <div class="pkg-card" data-package="الباقة الماسية الشهرية">
               <div class="pkg-icon">الباقة الماسية الشهرية</div>
               <h3>الباقة الماسية</h3>
               <div class="pkg-price">500,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد شهري: 600,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
-            <div class="pkg-card">
+            <div class="pkg-card" data-package="الباقة السنوية الفضية">
               <div class="pkg-icon">الباقة السنوية الفضية</div>
               <h3>الباقة السنوية الفضية</h3>
               <div class="pkg-price">1,000,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد سنوي: 1,600,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
-            <div class="pkg-card">
+            <div class="pkg-card" data-package="الباقة السنوية الذهبية">
               <div class="pkg-icon">الباقة السنوية الذهبية</div>
               <h3>الباقة السنوية الذهبية</h3>
               <div class="pkg-price">2,500,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد سنوي: 4,200,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
-            <div class="pkg-card featured">
+            <div class="pkg-card featured" data-package="الباقة السنوية الماسية VIP">
               <div class="ribbon">VIP</div>
               <div class="pkg-icon">الباقة السنوية الماسية VIP</div>
               <h3>الباقة الماسية VIP</h3>
@@ -521,6 +521,29 @@ app.get('/', (req, res) => {
         </div>
       </footer>
 
+      <script>
+        (async function refreshPublicPackagePricing() {
+          try {
+            const response = await fetch('/api/packages/pricing?ts=' + Date.now(), { cache: 'no-store' });
+            const result = await response.json();
+            if (!result.success || !result.data) return;
+            document.querySelectorAll('[data-package]').forEach(function(card) {
+              const packageName = card.getAttribute('data-package');
+              const packageData = result.data[packageName];
+              if (!packageData) return;
+              const price = Number(packageData.price);
+              const payout = Number(packageData.payout);
+              const priceEl = card.querySelector('.pkg-price');
+              const returnEl = card.querySelector('.pkg-return');
+              const period = Number(packageData.months) === 12 ? 'سنوي' : 'شهري';
+              if (priceEl && Number.isFinite(price)) priceEl.innerHTML = price.toLocaleString() + ' <small>د.ع</small>';
+              if (returnEl && Number.isFinite(payout)) returnEl.textContent = 'عائد ' + period + ': ' + payout.toLocaleString() + ' د.ع';
+            });
+          } catch (error) {
+            console.error('تعذر تحميل أسعار الباقات المحدثة:', error);
+          }
+        })();
+      </script>
     </body>
     </html>
   `);
