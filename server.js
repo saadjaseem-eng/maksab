@@ -18,9 +18,10 @@ dotenv.config();
 // متغيرات Supabase من ملف .env
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('متغيرات Supabase مفقودة: SUPABASE_URL وSUPABASE_ANON_KEY مطلوبان قبل بدء الخادم.');
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('متغيرات Supabase المطلوبة مفقودة: SUPABASE_URL وSUPABASE_ANON_KEY وSUPABASE_SERVICE_ROLE_KEY.');
 }
 
 // إنشاء عميل Supabase
@@ -40,6 +41,9 @@ const supabase = createClient(
     }
   }
 );
+const settingsSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+});
 
 const app = express();
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(v => v.trim()).filter(Boolean);
@@ -83,7 +87,7 @@ const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 const ONE_SIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
-const requiredSecrets = ['JWT_SECRET', 'ADMIN_PASSWORD', 'MODERATOR_PASSWORD', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+const requiredSecrets = ['JWT_SECRET', 'ADMIN_PASSWORD', 'MODERATOR_PASSWORD', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
 const missingSecrets = requiredSecrets.filter(name => !process.env[name] || String(process.env[name]).trim().length < 16);
 if (missingSecrets.length) {
   throw new Error(`متغيرات سرية مفقودة أو ضعيفة: ${missingSecrets.join(', ')}. اضبطها في بيئة التشغيل قبل بدء الخادم.`);
@@ -114,6 +118,43 @@ let announcementMemory = {
   active: true,
   text: '🔥 أهلاً بكم في منصة مَكْسَب الاستثمارية. تم إطلاق باقات استثمارية جديدة كلياً وتفعيل السحب الفوري، استثمر الآن وضاعف أرباحك!'
 };
+
+// إعدادات دائمة في Supabase. يحتاج المشروع إلى جدول app_settings (راجع ملف الترحيل المرفق).
+const SETTINGS_KEYS = {
+  pricing: 'package_pricing',
+  packageStatus: 'package_status',
+  announcement: 'announcement'
+};
+let persistentSettingsLoaded = false;
+let persistentSettingsLoadPromise = null;
+
+function normalizeDigits(value) {
+  return String(value ?? '')
+    .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, ch => String(ch.charCodeAt(0) - 0x06F0));
+}
+
+async function loadPersistentSettings() {
+  if (persistentSettingsLoaded) return;
+  if (persistentSettingsLoadPromise) return persistentSettingsLoadPromise;
+  persistentSettingsLoadPromise = (async () => {
+    const { data, error } = await settingsSupabase.from('app_settings').select('key, value').in('key', Object.values(SETTINGS_KEYS));
+    if (error) throw new Error(`تعذر تحميل إعدادات المنصة من Supabase: ${error.message}`);
+    for (const row of (data || [])) {
+      if (row.key === SETTINGS_KEYS.pricing && row.value && typeof row.value === 'object') packagePricingMemory = { ...packagePricingMemory, ...row.value };
+      if (row.key === SETTINGS_KEYS.packageStatus && row.value && typeof row.value === 'object') packageStatusMemory = { ...packageStatusMemory, ...row.value };
+      if (row.key === SETTINGS_KEYS.announcement && row.value && typeof row.value === 'object') announcementMemory = { ...announcementMemory, ...row.value };
+    }
+    persistentSettingsLoaded = true;
+  })();
+  try { await persistentSettingsLoadPromise; } finally { persistentSettingsLoadPromise = null; }
+}
+
+async function savePersistentSetting(key, value) {
+  const { error } = await settingsSupabase.from('app_settings').upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) throw new Error(`تعذر حفظ الإعداد في Supabase: ${error.message}`);
+  persistentSettingsLoaded = true;
+}
 
 // ==========================================
 // دالة إرسال إشعارات OneSignal للموبايل
@@ -2032,6 +2073,10 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
 
       <script>
         var adminToken = localStorage.getItem('maksab_admin_token') || null;
+        function normalizeDigits(value) { return String(value || '').replace(/[٠-٩]/g, function(ch) { return String(ch.charCodeAt(0) - 1632); }).replace(/[۰-۹]/g, function(ch) { return String(ch.charCodeAt(0) - 1776); }); }
+        var pricingEditing = false;
+        var pricingSaveInFlight = false;
+        var adminRefreshTimer = null;
         var adminRole = localStorage.getItem('maksab_admin_role') || null;
         var allPackagesData = [];
 
@@ -2076,7 +2121,26 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
 
           if (adminToken) {
             showAdmin();
-            setInterval(loadAdminData, 6000);
+            startAdminRefresh();
+          }
+        });
+
+        function startAdminRefresh() {
+          if (adminRefreshTimer) return;
+          adminRefreshTimer = setInterval(function() {
+            loadAdminData();
+          }, 6000);
+        }
+
+        document.addEventListener('focusin', function(event) {
+          if (event.target.closest && event.target.closest('#admin-pricing-grid')) pricingEditing = true;
+        });
+        document.addEventListener('focusout', function(event) {
+          if (event.target.closest && event.target.closest('#admin-pricing-grid')) {
+            setTimeout(function() {
+              var active = document.activeElement;
+              pricingEditing = !!(active && active.closest && active.closest('#admin-pricing-grid'));
+            }, 100);
           }
         });
 
@@ -2109,7 +2173,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
               localStorage.setItem('maksab_admin_token', adminToken);
               localStorage.setItem('maksab_admin_role', adminRole);
               showAdmin();
-              setInterval(loadAdminData, 6000);
+              startAdminRefresh();
             } else {
               if (msg) { msg.innerText = '❌ ' + (data.error || 'كلمة المرور غير صحيحة'); msg.style.color = 'var(--danger)'; }
             }
@@ -2152,6 +2216,9 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             if (data.success) {
               msgEl.innerText = '✅ ' + data.message;
               msgEl.style.color = 'var(--success)';
+              pricingEditing = false;
+              pricingSaveInFlight = false;
+              await loadPricingSettings();
             } else {
               msgEl.innerText = '❌ ' + data.error;
               msgEl.style.color = 'var(--danger)';
@@ -2196,9 +2263,10 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             var pkg = inp.getAttribute('data-pkg');
             var field = inp.getAttribute('data-field');
             if (!pricing[pkg]) pricing[pkg] = {};
-            pricing[pkg][field] = inp.value;
+            pricing[pkg][field] = normalizeDigits(inp.value);
           });
 
+          pricingSaveInFlight = true;
           msgEl.innerText = 'جاري حفظ الأسعار...';
           msgEl.style.color = 'var(--warning)';
 
@@ -2215,8 +2283,10 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             } else {
               msgEl.innerText = '❌ ' + data.error;
               msgEl.style.color = 'var(--danger)';
+              pricingSaveInFlight = false;
             }
           } catch(e) {
+            pricingSaveInFlight = false;
             msgEl.innerText = '❌ خطأ في الاتصال';
             msgEl.style.color = 'var(--danger)';
           }
@@ -2282,7 +2352,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
                        '</div>';
               }).join('');
 
-              loadPricingSettings();
+              if (!pricingEditing && !pricingSaveInFlight) loadPricingSettings();
             }
 
             var resDep = await fetch('/api/admin/deposits', { headers: headers });
@@ -2729,63 +2799,67 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
 // 3. المسارات الخلفية والمحمية (Secured APIs & Role System)
 // ==========================================
 
-app.get('/api/packages/settings', (req, res) => {
-  res.json({ success: true, data: packageStatusMemory });
+app.get('/api/packages/settings', async (req, res) => {
+  try { await loadPersistentSettings(); res.json({ success: true, data: packageStatusMemory }); } catch (err) { res.status(503).json({ success: false, error: err.message }); }
 });
 
 // ==========================================
 // API: جلب أسعار وعوائد الباقات (عام للمستثمرين)
 // ==========================================
-app.get('/api/packages/pricing', (req, res) => {
-  res.json({ success: true, data: packagePricingMemory });
+app.get('/api/packages/pricing', async (req, res) => {
+  try { await loadPersistentSettings(); res.json({ success: true, data: packagePricingMemory }); } catch (err) { res.status(503).json({ success: false, error: err.message }); }
 });
 
 // ==========================================
 // API: حفظ أسعار وعوائد الباقات (Super Admin فقط)
 // ==========================================
-app.post('/api/admin/packages/pricing', authenticateAdmin, requireSuperAdmin, (req, res) => {
+app.post('/api/admin/packages/pricing', authenticateAdmin, requireSuperAdmin, async (req, res) => {
   try {
     const { pricing } = req.body;
+    await loadPersistentSettings();
     if (!pricing || typeof pricing !== 'object') {
       return res.status(400).json({ success: false, error: 'بيانات الأسعار غير صحيحة.' });
     }
     for (const [pkgName, vals] of Object.entries(pricing)) {
       if (packagePricingMemory[pkgName]) {
-        const price = parseFloat(vals.price);
-        const payout = parseFloat(vals.payout);
-        if (!isNaN(price) && price > 0 && !isNaN(payout) && payout > 0) {
+        const price = Number(normalizeDigits(vals?.price));
+        const payout = Number(normalizeDigits(vals?.payout));
+        if (Number.isFinite(price) && price > 0 && Number.isFinite(payout) && payout >= price) {
           packagePricingMemory[pkgName] = { price, payout, months: packagePricingMemory[pkgName].months };
+        } else {
+          return res.status(400).json({ success: false, error: `قيمة غير صحيحة للباقة: ${pkgName}. يجب أن يكون السعر والعائد أرقاماً موجبة وأن يكون العائد أكبر أو مساوياً للسعر.` });
         }
       }
     }
-    res.json({ success: true, message: 'تم تحديث أسعار وعوائد الباقات بنجاح!' });
+    await savePersistentSetting(SETTINGS_KEYS.pricing, packagePricingMemory);
+    res.json({ success: true, message: 'تم تحديث أسعار وعوائد الباقات وحفظها بشكل دائم في Supabase!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.get('/api/announcement', (req, res) => {
-  res.json({ success: true, data: announcementMemory });
+app.get('/api/announcement', async (req, res) => {
+  try { await loadPersistentSettings(); res.json({ success: true, data: announcementMemory }); } catch (err) { res.status(503).json({ success: false, error: err.message }); }
 });
 
-app.post('/api/admin/announcement', authenticateAdmin, (req, res) => {
+app.post('/api/admin/announcement', authenticateAdmin, async (req, res) => {
   try {
     const { active, text } = req.body;
-    announcementMemory = {
-      active: Boolean(active),
-      text: text || ''
-    };
+    announcementMemory = { active: Boolean(active), text: String(text || '').slice(0, 1000) };
+    await savePersistentSetting(SETTINGS_KEYS.announcement, announcementMemory);
     res.json({ success: true, message: 'تم تحديث الشريط الإعلاني بنجاح وسيظهر للمستثمرين فوراً!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.post('/api/admin/packages/toggle', authenticateAdmin, requireSuperAdmin, (req, res) => {
+app.post('/api/admin/packages/toggle', authenticateAdmin, requireSuperAdmin, async (req, res) => {
   try {
     const { package_name, is_paused } = req.body;
     if (package_name) {
+      await loadPersistentSettings();
       packageStatusMemory[package_name] = !is_paused;
+      await savePersistentSetting(SETTINGS_KEYS.packageStatus, packageStatusMemory);
     }
     res.json({ success: true, message: 'تم تحديث حالة الباقة بنجاح!' });
   } catch (err) {
@@ -2935,6 +3009,7 @@ app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), as
 
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
+    await loadPersistentSettings();
     const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
 
     if (packageStatusMemory[plan_name] === false) {
