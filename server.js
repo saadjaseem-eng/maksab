@@ -3385,19 +3385,21 @@ app.get('/api/admin/withdrawals', authenticateAdmin, async (req, res) => {
   res.json({ success: true, data: data || [] });
 });
 
-app.get('/api/admin/users', verifyAdminToken, async (req, res) => {
+app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
   try {
-    // 1. جلب كافة الحسابات من جدول public.users
-    const { data: users, error } = await supabaseAdmin
+    // 1. استخدام كائن Supabase المربوط بـ SERVICE_ROLE_KEY لتجاوز الـ RLS
+    // 2. فحص الأخطاء لضمان معرفة أي خلل في أسماء الأعمدة
+    const { data, error } = await supabaseAdmin
       .from('users')
-      .select('*');
+      .select('id, full_name, phone_number, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, onesignal_player_id, created_at')
+      .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('خطأ Supabase عند جلب المستثمرين:', error.message);
+      return res.status(400).json({ success: false, error: error.message });
+    }
 
-    return res.json({
-      success: true,
-      data: users
-    });
+    return res.json({ success: true, data: data || [] });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
