@@ -3385,9 +3385,22 @@ app.get('/api/admin/withdrawals', authenticateAdmin, async (req, res) => {
   res.json({ success: true, data: data || [] });
 });
 
-app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
-  const { data } = await supabase.from('users').select('id, full_name, phone_number, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, onesignal_player_id, created_at');
-  res.json({ success: true, data: data || [] });
+app.get('/api/admin/users', verifyAdminToken, async (req, res) => {
+  try {
+    // 1. جلب كافة الحسابات من جدول public.users
+    const { data: users, error } = await supabaseAdmin
+      .from('users')
+      .select('*');
+
+    if (error) throw error;
+
+    return res.json({
+      success: true,
+      data: users
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/admin/packages', authenticateAdmin, async (req, res) => {
