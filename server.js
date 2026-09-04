@@ -42,7 +42,8 @@ const supabase = createClient(
   }
 );
 const settingsSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  realtime: { transport: WebSocket }
 });
 
 const app = express();
