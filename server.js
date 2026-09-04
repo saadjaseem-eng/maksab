@@ -88,10 +88,8 @@ const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 const ONE_SIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 
-const requiredSecrets = ['JWT_SECRET', 'ADMIN_PASSWORD', 'MODERATOR_PASSWORD', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
-const missingSecrets = requiredSecrets.filter(name => !process.env[name]);
 if (missingSecrets.length) {
-  console.error(`⚠️ متغيرات مفقودة: ${missingSecrets.join(', ')}`);
+  console.log(`⚠️ تنبيه: هناك متغيرات مفقودة: ${missingSecrets.join(', ')}`);
 }
 
 // ذاكرة مؤقتة لحالة الباقات
