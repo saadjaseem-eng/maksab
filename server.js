@@ -680,35 +680,61 @@ async function sendTelegramNotification(chatId, text) {
 // ==========================================
 // دالة الرفع السريعة عبر ImgBB
 // ==========================================
-async function uploadToStorage(base64Data) {
+// ==========================================
+// دالة الرفع الآمن المباشر إلى Supabase Storage
+// ==========================================
+async function uploadToStorage(base64Data, folderName = 'receipts') {
+  // إذا كانت البيانات رابطاً جاهزاً وليست Base64، يتم إرجاعها كما هي
   if (!base64Data || !base64Data.startsWith('data:image')) return base64Data;
-  if (typeof base64Data !== 'string' || base64Data.length > 6 * 1024 * 1024) throw new Error('حجم الصورة يتجاوز الحد المسموح (6MB).');
-  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(base64Data)) throw new Error('نوع الصورة غير مسموح. استخدم PNG أو JPEG أو WebP.');
+
+  // التحقق من الحجم (أقل من 6 ميجابايت)
+  if (typeof base64Data !== 'string' || base64Data.length > 8 * 1024 * 1024) {
+    throw new Error('حجم الصورة يتجاوز الحد المسموح (6MB).');
+  }
+
+  // فحص نوع الصورة وتفكيك صيغتها
+  const matches = base64Data.match(/^data:(image\/(png|jpeg|jpg|webp));base64,(.+)$/i);
+  if (!matches) {
+    throw new Error('نوع الصورة غير مسموح. استخدم PNG أو JPEG أو WebP.');
+  }
+
+  const mimeType = matches[1];
+  const ext = matches[2] === 'jpeg' ? 'jpg' : matches[2];
+  const base64Content = matches[3];
+
+  // تحويل Base64 إلى Buffer متوافق مع خادم Node.js
+  const fileBuffer = Buffer.from(base64Content, 'base64');
+
+  // توليد اسم ملف فريد ومعزول لمنع التداخل والتعارض
+  const fileName = `${folderName}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+  const bucketName = 'maksab-uploads';
 
   try {
-    if (!IMGBB_API_KEY) {
-      throw new Error('مفتاح IMGBB_API_KEY غير موجود في ملف .env');
+    // الرفع باستخدام عميل settingsSupabase المحمي بـ Service Role Key
+    const { data, error } = await settingsSupabase.storage
+      .from(bucketName)
+      .upload(fileName, fileBuffer, {
+        contentType: mimeType,
+        upsert: false
+      });
+
+    if (error) {
+      throw new Error(`خطأ Supabase Storage: ${error.message}`);
     }
 
-    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-    const params = new URLSearchParams();
-    params.append('image', cleanBase64);
+    // جلب الرابط العام المباشر للملف المرفوع
+    const { data: publicUrlData } = settingsSupabase.storage
+      .from(bucketName)
+      .getPublicUrl(fileName);
 
-    const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-      method: 'POST',
-      body: params
-    });
-
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error?.message || 'فشل الرفع لـ ImgBB');
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      throw new Error('تعذر جلب رابط الملف المرفوع.');
     }
 
-    return data.data.url;
+    return publicUrlData.publicUrl;
   } catch (err) {
-    console.error('❌ خطأ رفع الصورة:', err.message);
-    throw new Error(`فشل رفع الصورة: ${err.message}`);
+    console.error('❌ خطأ أثناء رفع الملف إلى Supabase Storage:', err.message);
+    throw new Error(`فشل رفع الصورة للتخزين: ${err.message}`);
   }
 }
 
@@ -3211,7 +3237,8 @@ app.post('/api/deposits', authenticateUser, async (req, res) => {
     }
     if (!transaction_ref || String(transaction_ref).length > 200) return res.status(400).json({ success: false, error: 'مرجع المعاملة غير صحيح.' });
 
-    const publicUrl = await uploadToStorage(receipt_url);
+    // 🟢 الرفع إلى مجلد الإشعارات في Supabase Storage
+    const publicUrl = await uploadToStorage(receipt_url, 'receipts');
 
     const { error } = await supabase.from('deposits').insert([{
       user_id: req.user.id,
@@ -3258,7 +3285,9 @@ app.post('/api/withdrawals', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1
 
 app.post('/api/user/kyc', authenticateUser, async (req, res) => {
   try {
-    const publicUrl = await uploadToStorage(req.body.kyc_doc);
+    // 🟢 الرفع إلى مجلد الهويات في Supabase Storage
+    const publicUrl = await uploadToStorage(req.body.kyc_doc, 'kyc-documents');
+    
     await supabase.from('users').update({ kyc_doc: publicUrl, kyc_status: 'pending' }).eq('id', req.user.id);
     res.json({ success: true });
   } catch (err) {
@@ -3676,8 +3705,9 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, requireSuperAdmin, asy
 // ==========================================
 // إشعار قبل اكتمال الباقة بـ 24 ساعة (فحص دوري كل ساعة)
 // ==========================================
-const preCompletionNotifiedSet = new Set();
-
+// ==========================================
+// إشعار قبل اكتمال الباقة بـ 24 ساعة (مع حماية التكرار)
+// ==========================================
 async function checkPreCompletionPackages() {
   try {
     const now = new Date();
@@ -3691,17 +3721,26 @@ async function checkPreCompletionPackages() {
     if (!activePackages || activePackages.length === 0) return;
 
     for (const pkg of activePackages) {
-      if (preCompletionNotifiedSet.has(pkg.id)) continue;
-
       const endDate = new Date(pkg.end_date);
       if (endDate > now && endDate <= twentyFourHoursLater) {
+        
+        // 🟢 الفحص المباشر في قاعدة البيانات: هل أُرسل إشعار مسبق لهذه الباقة؟
+        const notifTitle = '⏰ باقتك على وشك الاكتمال';
+        const { data: existingNotif } = await supabase.from('notifications')
+          .select('id')
+          .eq('user_id', pkg.user_id)
+          .eq('title', notifTitle)
+          .like('message', `%(${pkg.plan_name})%`)
+          .limit(1);
+
+        if (existingNotif && existingNotif.length > 0) continue; // تم الإشعار مسبقاً
+
         const { data: usr } = await supabase.from('users')
           .select('phone_number, telegram_chat_id, onesignal_player_id')
           .eq('id', pkg.user_id)
           .single();
 
         if (usr) {
-          const notifTitle = '⏰ باقتك على وشك الاكتمال';
           const notifMsg = `باقتك (${pkg.plan_name}) ستكتمل خلال 24 ساعة. العائد المتوقع: ${Number(pkg.expected_payout).toLocaleString()} د.ع. تابع لوحة التحكم لمتابعة الصرف.`;
 
           await supabase.from('notifications').insert([{
@@ -3717,24 +3756,11 @@ async function checkPreCompletionPackages() {
             await sendTelegramNotification(usr.telegram_chat_id, `⏰ <b>باقتك على وشك الاكتمال!</b>\n\nباقتك <b>${pkg.plan_name}</b> ستكتمل خلال 24 ساعة.\nالعائد المتوقع: <b>${Number(pkg.expected_payout).toLocaleString()} د.ع</b>\n\nتابع لوحة التحكم لمتابعة عملية الصرف.`);
           }
 
-          preCompletionNotifiedSet.add(pkg.id);
           console.log(`🔔 تم إرسال إشعار قبل الاكتمال للباقة ${pkg.id} (${pkg.plan_name})`);
         }
       }
-    }
-
-    // تنظيف الذاكرة من الباقات المكتملة
-    for (const id of preCompletionNotifiedSet) {
-      const pkg = activePackages.find(p => p.id === id);
-      if (!pkg) preCompletionNotifiedSet.delete(id);
     }
   } catch (err) {
     console.error('❌ خطأ في فحص إشعارات قبل الاكتمال:', err.message);
   }
 }
-
-setInterval(checkPreCompletionPackages, 60 * 60 * 1000);
-setTimeout(checkPreCompletionPackages, 30 * 1000);
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🔒 السيرفر المحصن يعمل بنجاح وبإدارة التنفيذي ${EXECUTIVE_DIRECTOR} على: https://maksab-production-6736.up.railway.app`));
