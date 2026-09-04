@@ -516,7 +516,7 @@ app.get('/', (req, res) => {
             </div>
           </div>
           <div class="footer-bottom">
-            &copy; 2025 مَكْسَب الاستثمارية — جميع الحقوق محفوظة
+            &copy; 2026 مَكْسَب الاستثمارية — جميع الحقوق محفوظة
           </div>
         </div>
       </footer>
