@@ -3387,15 +3387,13 @@ app.get('/api/admin/withdrawals', authenticateAdmin, async (req, res) => {
 
 app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
   try {
-    // 1. استخدام كائن Supabase المربوط بـ SERVICE_ROLE_KEY لتجاوز الـ RLS
-    // 2. فحص الأخطاء لضمان معرفة أي خلل في أسماء الأعمدة
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await settingsSupabase
       .from('users')
       .select('id, full_name, phone_number, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, onesignal_player_id, created_at')
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('خطأ Supabase عند جلب المستثمرين:', error.message);
+      console.error('❌ خطأ Supabase عند جلب المستثمرين:', error.message);
       return res.status(400).json({ success: false, error: error.message });
     }
 
