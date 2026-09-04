@@ -3767,3 +3767,8 @@ async function checkPreCompletionPackages() {
     console.error('❌ خطأ في فحص إشعارات قبل الاكتمال:', err.message);
   }
 }
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on port ${PORT}`);
+});
