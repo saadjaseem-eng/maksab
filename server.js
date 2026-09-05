@@ -77,7 +77,7 @@ app.use((req, res, next) => {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; " +
     "img-src 'self' data: blob: https://img.icons8.com https://*.supabase.co; " +
     "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; " +
-    "connect-src 'self' https://cdn.onesignal.com https://onesignal.com https://*.supabase.co; " +
+    "connect-src 'self' https://cdn.onesignal.com https://onesignal.com https://*.onesignal.com https://*.supabase.co https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com https://img.icons8.com; " +
     "worker-src 'self' blob:; " +
     "object-src 'none'; " +
     "frame-ancestors 'none'; " +
@@ -697,12 +697,18 @@ app.get('/sw.js', (req, res) => {
         // طلبات خارجية (Font Awesome, أيقونات) — الكاش أولاً
         event.respondWith(
           caches.match(event.request).then(function(r) {
-            return r || fetch(event.request).then(function(response) {
+            if (r) return r;
+            return fetch(event.request).then(function(response) {
+              // ✅ إصلاح: لا نخزّن إلا الاستجابات الناجحة (status 200) فقط
               var clone = response.clone();
               caches.open(CACHE_NAME).then(function(cache) {
                 cache.put(event.request, clone).catch(function() {});
               });
               return response;
+            }).catch(function() {
+              // ✅ إصلاح: عند فشل الجلب (CSP/شبكة) نعيد استجابة فارغة بدل فشل الطلب كلياً
+              // حتى لا تُعلَّق الصفحة ولا تتكرر أخطاء "Refused to connect"
+              return new Response('', { status: 504, statusText: 'Gateway Timeout' });
             });
           })
         );
