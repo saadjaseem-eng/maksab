@@ -3272,31 +3272,114 @@ app.post('/api/deposits', authenticateUser, async (req, res) => {
   }
 });
 
-app.post('/api/withdrawals', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1000, max: 10 }), async (req, res) => {
-  try {
-    const { amount, payment_method, account_details, wallet_type } = req.body;
-    const numAmount = positiveAmount(amount, 100000000);
-    if (!numAmount || !payment_method || !account_details || !['capital', 'profit'].includes(wallet_type || 'capital')) return res.status(400).json({ success: false, error: 'بيانات السحب غير صحيحة.' });
-    const selectedWallet = wallet_type || 'capital';
-    const { data: depRows } = await supabase.from('deposits').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', selectedWallet);
-    const { data: withRows } = await supabase.from('withdrawals').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', selectedWallet);
-    const available = (depRows || []).reduce((a, x) => a + Number(x.amount), 0) - (withRows || []).reduce((a, x) => a + Number(x.amount), 0);
-    if (numAmount > available) return res.status(400).json({ success: false, error: 'الرصيد المتاح لا يكفي لتنفيذ السحب.' });
-    const { error } = await supabase.from('withdrawals').insert([{
-      user_id: req.user.id,
-      phone_number: req.user.phone,
-      amount: numAmount,
-      payment_method,
-      account_details,
-            status: 'pending',
-      wallet_type: selectedWallet
-    }]);
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+import React, { useState } from 'react';
+import axios from 'axios';
+
+export default function WithdrawalSection({ userCompletedProfit }) {
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState('zaincash'); // 'zaincash' | 'superkey'
+  const [accountNumber, setAccountNumber] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleWithdraw = async (e) => {
+    e.preventDefault();
+    if (!amount || amount <= 0) return alert('يرجى تحديد مبلغ سحب صالح');
+    if (!accountNumber) return alert('يرجى إدخال رقم المحفظة / الحساب');
+
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('userToken');
+      const res = await axios.post('/api/withdraw', {
+        amount: Number(amount),
+        method, // 'zaincash' أو 'superkey'
+        account_number: accountNumber
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.data.success) {
+        alert('تم تقديم طلب السحب بنجاح، بانتظار موافقة الإدارة.');
+        setAmount('');
+        setAccountNumber('');
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'حدث خطأ أثناء تقديم طلب السحب');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-800/90 p-6 rounded-2xl border border-slate-700 text-white shadow-xl">
+      <h3 className="text-xl font-bold mb-4 text-center text-slate-100">سحب الأرباح والأرصدة</h3>
+      
+      <form onSubmit={handleWithdraw} className="space-y-4">
+        {/* المبلغ المراد سحبه */}
+        <div>
+          <input
+            type="number"
+            placeholder="المبلغ بالدينار العراقي"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-amber-500"
+          />
+          <p className="text-xs text-emerald-400 mt-1">
+            الأرباح المتاحة للسحب (الباقات المكتملة): {userCompletedProfit?.toLocaleString() || 0} د.ع
+          </p>
+        </div>
+
+        {/* تحديد مصدر الرصيد - مقيد حصراً بأرباح الباقات المكتملة */}
+        <div>
+          <select 
+            disabled 
+            className="w-full bg-slate-900/60 border border-slate-700 rounded-xl p-3 text-slate-400 cursor-not-allowed"
+          >
+            <option>أرباح الباقات المكتملة فقط</option>
+          </select>
+        </div>
+
+        {/* القائمة المنسدلة لاختيار طريقة السحب */}
+        <div>
+          <select
+            value={method}
+            onChange={(e) => {
+              setMethod(e.target.value);
+              setAccountNumber(''); // إعادة تعيين الرقم عند تغيير الطريقة
+            }}
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-amber-500"
+          >
+            <option value="zaincash">زين كاش (ZainCash)</option>
+            <option value="superkey">حساب سوبر كي (Super Key)</option>
+          </select>
+        </div>
+
+        {/* حقل إدخال الرقم حسب الاختيار */}
+        <div>
+          <input
+            type="text"
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value)}
+            placeholder={
+              method === 'zaincash'
+                ? 'رقم محفظة زين كاش (مثال: 077xxxxxxxx)'
+                : 'رقم حساب سوبر كي الخاص بك'
+            }
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-amber-500"
+          />
+        </div>
+
+        {/* زر إرسال الطلب */}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-red-500 hover:bg-red-600 text-white font-bold p-3 rounded-xl transition duration-200 disabled:opacity-50"
+        >
+          {loading ? 'جاري الإرسال...' : 'طلب السحب المالي'}
+        </button>
+      </form>
+    </div>
+  );
+}
 
 app.post('/api/user/kyc', authenticateUser, async (req, res) => {
   try {
