@@ -1116,7 +1116,7 @@ app.get('/app', (req, res) => {
   <!-- القائمة المنسدلة لاختيار طريقة السحب -->
   <select id="withdraw-method" onchange="updateWithdrawPlaceholder()" style="margin-bottom:10px;">
     <option value="ZainCash">زين كاش (ZainCash)</option>
-    <option value="SuperKey">حساب سوبر كي (Super Key)</option>
+    <option value="SuperKey">حساب سوبر كي (SuperQi)</option>
   </select>
   
   <!-- حقل إدخال رقم المحفظة / الحساب -->
