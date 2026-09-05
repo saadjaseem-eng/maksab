@@ -20,16 +20,22 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('متغيرات Supabase المطلوبة مفقودة: SUPABASE_URL وSUPABASE_ANON_KEY وSUPABASE_SERVICE_ROLE_KEY.');
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('متغيرات Supabase المطلوبة مفقودة: SUPABASE_URL وSUPABASE_SERVICE_ROLE_KEY (الإصلاح الجديد يوحّد العمليات على عميل service-role).');
 }
 
 // إنشاء عميل Supabase
 // نمرر ws كنقل (transport) لقناة realtime حتى يعمل العميل على Node.js 20 دون خطأ.
 // نُعطّل أيضاً جلسة المصادقة التلقائية لأننا نستخدم JWT خاص بنا.
+// إنشاء عميل Supabase
+// 🛡️ إصلاح 2: توحيد جميع عمليات الخادم على عميل service-role لأنها عمليات خادم-إلى-قاعدة
+// (كان الكود يمزج عميل anon لمعظم الكتابات مما يفرض سياسات RLS متساهلة ويجعل مفتاح anon مكافئاً لمفتاح إداري)
+// نمرر ws كنقل (transport) لقناة realtime حتى يعمل العميل على Node.js 20 دون خطأ.
+// نُعطّل أيضاً جلسة المصادقة التلقائية لأننا نستخدم JWT خاصاً بنا.
+// نُبقي الاسم settingsSupabase كمرادف للتوافق مع بقية الكود.
 const supabase = createClient(
   SUPABASE_URL,
-  SUPABASE_ANON_KEY,
+  SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
       persistSession: false,
@@ -41,12 +47,14 @@ const supabase = createClient(
     }
   }
 );
-const settingsSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  realtime: { transport: WebSocket }
-});
+const settingsSupabase = supabase;
 
 const app = express();
+
+// 🛡️ إصلاح 1: تفعيل trust proxy للعمل خلف Railway (لأن req.ip كان يعيد IP الخادم الوكيل دائماً
+// فتتشابه مفاتيح حد المعدل وقفل تسجيل الدخول لكل المستخدمين خلف البروكسي)
+app.set('trust proxy', 1);
+
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(v => v.trim()).filter(Boolean);
 app.use(cors({
   origin: (origin, callback) => {
@@ -137,6 +145,43 @@ function normalizeDigits(value) {
     .replace(/[٠-٩]/g, ch => String(ch.charCodeAt(0) - 0x0660))
     .replace(/[۰-۹]/g, ch => String(ch.charCodeAt(0) - 0x06F0));
 }
+// 🛡️ إصلاح 3: تطبيع رقم الهاتف العراقي إلى الصيغة الدولية الموحدة 9647XXXXXXXXX
+// (تحويل الأرقام العربية/الفارسية + إزالة الفراغات والرموز + معالجة البادئات 00964/+964/964/0)
+function normalizePhone(raw) {
+  let v = normalizeDigits(raw).replace(/[\s\-()\.]/g, '').replace(/^\+/, '').trim();
+  if (v.startsWith('00964')) v = '964' + v.slice(5);
+  if (v.startsWith('964')) return v;
+  if (v.startsWith('0')) return '964' + v.slice(1);
+  return '964' + v;
+}
+
+// التحقق من صيغة رقم الهاتف العراقي (يجب أن يبدأ بـ 9647 ويتبعه 9 أرقام)
+function isValidIraqiPhone(v) {
+  return /^9647[0-9]{9}$/.test(String(v || ''));
+}
+
+// كل الصيغ المحتملة لنفس الرقم — تُستخدم لمطابقة المستخدمين القدامى عند الدخول وكشف التكرار عند التسجيل
+function phoneVariants(canonical) {
+  const bare = canonical.startsWith('964') ? canonical.slice(3) : canonical; // 7701234567
+  return [
+    canonical,          // 9647701234567
+    '0' + bare,         // 07701234567
+    bare,               // 7701234567
+    '+964' + bare,      // +9647701234567
+    '00964' + bare      // 009647701234567
+  ];
+}
+
+// 🛡️ إصلاح 4: تعقيم النصوص قبل إدراجها في innerHTML (حماية من XSS في الواجهات)
+function escHtml(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 
 async function loadPersistentSettings() {
   if (persistentSettingsLoaded) return;
@@ -366,7 +411,7 @@ app.get('/', (req, res) => {
           </div>
           <div class="packages-grid">
             <div class="pkg-card" data-package="الباقة الفضية الشهرية">
-              <div class="pkg-icon">الباقة الفضية الشهرية</div>
+              <div class="pkg-icon"><i class="fa-solid fa-coins"></i></div>
               <h3>الباقة الفضية</h3>
               <div class="pkg-price">100,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد شهري: 120,000 د.ع</div>
@@ -374,28 +419,28 @@ app.get('/', (req, res) => {
             </div>
             <div class="pkg-card featured" data-package="الباقة الذهبية الشهرية">
               <div class="ribbon">الأكثر شعبية</div>
-              <div class="pkg-icon">الباقة الذهبية الشهرية</div>
+              <div class="pkg-icon"><i class="fa-solid fa-coins"></i></div>
               <h3>الباقة الذهبية</h3>
               <div class="pkg-price">250,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد شهري: 300,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
             <div class="pkg-card" data-package="الباقة الماسية الشهرية">
-              <div class="pkg-icon">الباقة الماسية الشهرية</div>
+              <div class="pkg-icon"><i class="fa-solid fa-coins"></i></div>
               <h3>الباقة الماسية</h3>
               <div class="pkg-price">500,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد شهري: 600,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
             <div class="pkg-card" data-package="الباقة السنوية الفضية">
-              <div class="pkg-icon">الباقة السنوية الفضية</div>
+              <div class="pkg-icon"><i class="fa-solid fa-trophy"></i></div>
               <h3>الباقة السنوية الفضية</h3>
               <div class="pkg-price">1,000,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد سنوي: 1,600,000 د.ع</div>
               <a href="/app" class="btn-primary">اشترك الآن</a>
             </div>
             <div class="pkg-card" data-package="الباقة السنوية الذهبية">
-              <div class="pkg-icon">الباقة السنوية الذهبية</div>
+              <div class="pkg-icon"><i class="fa-solid fa-trophy"></i></div>
               <h3>الباقة السنوية الذهبية</h3>
               <div class="pkg-price">2,500,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد سنوي: 4,200,000 د.ع</div>
@@ -403,7 +448,7 @@ app.get('/', (req, res) => {
             </div>
             <div class="pkg-card featured" data-package="الباقة السنوية الماسية VIP">
               <div class="ribbon">VIP</div>
-              <div class="pkg-icon">الباقة السنوية الماسية VIP</div>
+              <div class="pkg-icon"><i class="fa-solid fa-crown"></i></div>
               <h3>الباقة الماسية VIP</h3>
               <div class="pkg-price">5,000,000 <small>د.ع</small></div>
               <div class="pkg-return">عائد سنوي: 9,000,000 د.ع</div>
@@ -429,7 +474,7 @@ app.get('/', (req, res) => {
             <div class="step-card">
               <div class="step-num">2</div>
               <h4>شحن الرصيد</h4>
-              <p>استانف رصيدك بعملية تحويل بسيطة مع إرفاق إشعار الدفع.</p>
+              <p>استأنف رصيدك بعملية تحويل بسيطة مع إرفاق إشعار الدفع.</p>
             </div>
             <div class="step-card">
               <div class="step-num">3</div>
@@ -439,7 +484,7 @@ app.get('/', (req, res) => {
             <div class="step-card">
               <div class="step-num">4</div>
               <h4>استلام العائد</h4>
-              <p>عند اكتمال مدة الباقة، تتم إداع أرباحك مباشرة إلى رصيدك مع إشعار فوري.</p>
+              <p>عند اكتمال مدة الباقة، تتم إيداع أرباحك مباشرة إلى رصيدك مع إشعار فوري.</p>
             </div>
           </div>
         </div>
@@ -838,6 +883,41 @@ app.get('/app', (req, res) => {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>مَكْسَب الاستثمارية - Fintech</title>
+      <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+      <script>
+        window.OneSignal = window.OneSignal || [];
+        window.OneSignal.push(function() {
+          window.OneSignal.init({
+            appId: '${ONE_SIGNAL_APP_ID || ""}'
+          }).then(function() {
+            // بعد التهيئة نطلب السماح بالإشعارات ونرسل player id للخادم
+            window.OneSignal.Slidedown.promptPush();
+            window.OneSignal.User.PushSubscription.addEventListener('change', function(evt) {
+              try {
+                var pid = evt && evt.current && evt.current.id ? evt.current.id : null;
+                if (pid && typeof authToken !== 'undefined' && authToken) {
+                  fetch('/api/user/push-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ player_id: pid })
+                  }).catch(function(e) { console.log('push token save failed', e); });
+                }
+              } catch(e) {}
+            });
+            // محاولة فورية إن كان مسجلاً مسبقاً
+            try {
+              var existingPid = window.OneSignal.User.PushSubscription.id;
+              if (existingPid && typeof authToken !== 'undefined' && authToken) {
+                fetch('/api/user/push-token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                  body: JSON.stringify({ player_id: existingPid })
+                }).catch(function(e) {});
+              }
+            } catch(e) {}
+          }).catch(function(e) { console.log('OneSignal init failed', e); });
+        });
+      </script>
       <link rel="manifest" href="/manifest.json?v=${APP_VERSION}">
       <meta name="theme-color" content="#0f172a">
       <link rel="apple-touch-icon" href="https://img.icons8.com/color/192/000000/gold-bars.png">
@@ -890,6 +970,12 @@ app.get('/app', (req, res) => {
 
         .notif-bell-container { position: relative; cursor: pointer; }
         .notif-bell-icon { font-size: 20px; color: var(--accent-gold); padding: 8px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(212,175,55,0.3); display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; box-shadow: 0 4px 10px rgba(212,175,55,0.15); }
+        .kyc-verified-badge { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, #1d9bf0 0%, #0d8bd9 100%); color: #ffffff; font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.35); box-shadow: 0 2px 8px rgba(29, 155, 240, 0.45); vertical-align: middle; margin-right: 6px; white-space: nowrap; }
+        .kyc-verified-badge i { font-size: 9px; }
+        .kyc-status-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+        .kyc-status-pill.pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.35); }
+        .kyc-status-pill.rejected { background: rgba(239, 68, 68, 0.15); color: var(--danger-red); border: 1px solid rgba(239, 68, 68, 0.35); }
+        .kyc-status-pill.approved { background: rgba(29, 155, 240, 0.15); color: #1d9bf0; border: 1px solid rgba(29, 155, 240, 0.35); }
         .notif-count-badge { position: absolute; top: -5px; right: -5px; background: var(--danger-red); color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
 
@@ -950,7 +1036,7 @@ app.get('/app', (req, res) => {
         <div id="dashboard-section" style="display:none;">
           <div class="top-nav">
             <div>
-              <strong style="color:var(--accent-gold);"><span id="user-name"></span></strong>
+<strong style="color:var(--accent-gold);"><span id="user-name"></span><span id="user-name-kyc-badge"></span></strong>
               <div style="font-size:11px; color:var(--text-muted);" id="kyc-badge-status">غير موثق</div>
               <div style="font-size: 11px; color: var(--accent-gold); margin-top: 2px;">
                 <i class="fa-solid fa-circle-check"></i> المدير التنفيذي: <strong>${EXECUTIVE_DIRECTOR}</strong>
@@ -1254,8 +1340,33 @@ app.get('/app', (req, res) => {
           if (status) status.innerText = '✅ تم تثبيت التطبيق بنجاح!';
         });
 
+        function escHtml(v) {
+          return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
         var isRegister = false;
         var authToken = localStorage.getItem('maksab_token') || null;
+        // 🔗 إصلاح 7 (الحرج الثاني): قراءة ?ref= من الرابط — كان الصندوق المخفي ref-code-input لا يُعبأ أبداً
+        var urlRefCode = null;
+        try {
+          var urlParams = new URLSearchParams(window.location.search);
+          urlRefCode = urlParams.get('ref');
+        } catch(e) { urlRefCode = null; }
+        if (urlRefCode) {
+          urlRefCode = urlRefCode.trim().replace(/[^0-9a-zA-Z-]/g, '').slice(0, 64);
+        }
+        if (urlRefCode && !authToken) {
+          var refBox = document.getElementById('ref-alert-box');
+          var refInput = document.getElementById('ref-code-input');
+          if (refInput) refInput.value = urlRefCode;
+          if (refBox) refBox.style.display = 'block';
+          // تحويل تلقائي لوضع "إنشاء حساب جديد" لأن زائر رابط الدعوة يريد التسجيل
+          if (!isRegister) { isRegister = true; }
+        }
         var currentUser = JSON.parse(localStorage.getItem('maksab_user')) || null;
         var rawCapital = 0; var rawProfit = 0;
         var selectedPkg = null;
@@ -1415,7 +1526,7 @@ app.get('/app', (req, res) => {
           document.getElementById('dashboard-section').style.display = 'block';
           document.getElementById('user-name').innerText = currentUser.full_name;
           document.getElementById('ref-link').value = window.location.origin + '/app?ref=' + currentUser.id;
-          
+
           document.getElementById('telegram-link').href = 'https://t.me/${TELEGRAM_BOT_NAME}?start=' + currentUser.id;
 
           loadUserData();
@@ -1425,9 +1536,66 @@ app.get('/app', (req, res) => {
           fetchSystemSettings();
           fetchPackagePricing();
           fetchAnnouncementBanner();
+          renderKYCStatus(currentUser.kyc_status || 'none');
           setInterval(fetchSystemSettings, 10000);
           setInterval(fetchPackagePricing, 15000);
           setInterval(fetchAnnouncementBanner, 15000);
+          setInterval(refreshKYCStatus, 30000);
+          syncOneSignalToken();
+        }
+
+        async function refreshKYCStatus() {
+          try {
+            var data = await fetchWithAuth('/api/user/me');
+            if (data && data.success && data.user) {
+              if (data.user.kyc_status !== undefined && (currentUser.kyc_status || '') !== data.user.kyc_status) {
+                currentUser.kyc_status = data.user.kyc_status;
+                localStorage.setItem('maksab_user', JSON.stringify(currentUser));
+        function syncOneSignalToken() {
+          try {
+            if (window.OneSignal && window.OneSignal.User && window.OneSignal.User.PushSubscription) {
+              var pid = window.OneSignal.User.PushSubscription.id;
+              if (pid && authToken) {
+                fetch('/api/user/push-token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                  body: JSON.stringify({ player_id: pid })
+                }).catch(function(e) { console.log('push token sync failed', e); });
+              }
+            }
+          } catch(e) {}
+        }
+              }
+              renderKYCStatus(data.user.kyc_status || 'none');
+              if (data.user.full_name && data.user.full_name !== currentUser.full_name) {
+                currentUser.full_name = data.user.full_name;
+                document.getElementById('user-name').innerText = data.user.full_name;
+                localStorage.setItem('maksab_user', JSON.stringify(currentUser));
+              }
+            }
+          } catch(e) { console.log('kyc refresh error', e); }
+        }
+
+        function renderKYCStatus(status) {
+          var nameBadge = document.getElementById('user-name-kyc-badge');
+          var pillEl = document.getElementById('kyc-badge-status');
+          var badge = '<span class="kyc-verified-badge"><i class="fa-solid fa-check"></i> موثّق</span>';
+          var pillHtml = '';
+          var pillClass = 'kyc-status-pill';
+          if (status === 'approved') {
+            pillHtml = '<i class="fa-solid fa-circle-check" style="color:#1d9bf0;"></i> حسابك موثّق — تظهر شارة التوثيق بجانب اسمك';
+            pillClass += ' approved';
+          } else if (status === 'pending') {
+            pillHtml = '<i class="fa-solid fa-hourglass-half" style="color:var(--warning);"></i> هويتك مرفوعة وتنتظر مراجعة الإدارة';
+            pillClass += ' pending';
+          } else if (status === 'rejected') {
+            pillHtml = '<i class="fa-solid fa-circle-xmark" style="color:var(--danger-red);"></i> رُفضت هويتك — ارفع وثيقة أوضح من تبويب الحساب';
+            pillClass += ' rejected';
+          } else {
+            pillHtml = '<i class="fa-solid fa-id-card" style="color:var(--text-muted);"></i> غير موثّق — ارفع هويتك من تبويب الحساب';
+          }
+          if (nameBadge) nameBadge.innerHTML = (status === 'approved') ? badge : '';
+          if (pillEl) { pillEl.className = pillClass; pillEl.innerHTML = pillHtml; }
         }
 
         async function fetchWithAuth(url, options) {
@@ -1490,6 +1658,8 @@ app.get('/app', (req, res) => {
 
           document.getElementById('user-history').innerHTML = filtered.map(function(t) {
             var typeIcon = t.type === 'deposit' ? 'fa-arrow-down' : (t.type === 'withdrawal' ? 'fa-arrow-up' : 'fa-box-archive');
+            var safeLabel = escHtml(t.label || '');
+            var safeStatus = escHtml(t.status || '');
             var typeColor = t.type === 'deposit' ? 'var(--success-green)' : (t.type === 'withdrawal' ? 'var(--danger-red)' : 'var(--accent-gold)');
             var statusText = t.status === 'approved' ? '✅ مقبول' : (t.status === 'completed' ? '🎉 مكتملة' : (t.status === 'active' ? '⚡ نشطة' : (t.status === 'pending' ? '⏳ قيد الانتظار' : t.status)));
             var amountLabel = '';
@@ -1531,10 +1701,12 @@ app.get('/app', (req, res) => {
 
           container.innerHTML = notifs.map(function(n) {
             var readClass = n.is_read ? 'read' : '';
+            var safeTitle = escHtml(n.title || '');
+            var safeMsg = escHtml(safeMsg || '');
             var dateStr = new Date(n.created_at).toLocaleString('ar-IQ');
             return '<div class="notif-full-card ' + readClass + '">' +
-                   '<div class="notif-full-title"><i class="fa-solid fa-circle-info" style="color:var(--accent-gold);"></i> ' + n.title + '</div>' +
-                   '<div class="notif-full-msg">' + n.message + '</div>' +
+                   '<div class="notif-full-title"><i class="fa-solid fa-circle-info" style="color:var(--accent-gold);"></i> ' + safeTitle + '</div>' +
+                   '<div class="notif-full-msg">' + safeMsg + '</div>' +
                    '<span class="notif-full-date"><i class="fa-regular fa-clock"></i> ' + dateStr + '</span>' +
                    '</div>';
           }).join('');
@@ -1654,11 +1826,12 @@ app.get('/app', (req, res) => {
               timeMarkup = '<div style="font-size:12px; color:var(--warning); margin-top:8px;">⏳ الطلب بانتظار موافقة الإدارة وتفعيل الباقة</div>';
             }
 
+            var safePlanName = escHtml(p.plan_name || '');
             var statusBadge = p.status === 'active' ? 'نشطة ⚡' : (p.status === 'completed' ? 'مكتملة ✅' : 'قيد الانتظار ⏳');
             return '<div class="history-item" style="flex-direction:column; align-items:stretch; gap:6px;">' +
                      '<div style="display:flex; justify-content:space-between; align-items:center;">' +
                         '<div>' +
-                          '<strong>' + p.plan_name + '</strong> - ' + formatMoney(p.invested_amount) + '<br>' +
+                          '<strong>' + safePlanName + '</strong> - ' + formatMoney(p.invested_amount) + '<br>' +
                           '<small style="color:var(--success-green);">العائد المتوقع: ' + formatMoney(p.expected_payout) + '</small>' +
                         '</div>' +
                         '<span class="badge badge-' + p.status + '">' + statusBadge + '</span>' +
@@ -1745,11 +1918,25 @@ async function submitWithdraw() {
   }
 }
         async function uploadKYC() {
-          var f = document.getElementById('kyc-file'); if (f.files.length === 0) return;
-          document.getElementById('kyc-msg').innerText = 'جاري رفع وتشفير الهوية...';
-          var b64 = await convertFileToBase64(f.files[0]);
-          await fetchWithAuth('/api/user/kyc', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ kyc_doc: b64 }) });
-          document.getElementById('kyc-msg').innerText = '✅ تم رفع الهوية بنجاح';
+          var f = document.getElementById('kyc-file');
+          var msg = document.getElementById('kyc-msg');
+          if (!f || f.files.length === 0) { msg.innerText = '❌ اختر ملف الهوية أولاً'; return; }
+          if (f.files[0].size > 4 * 1024 * 1024) { msg.innerText = '❌ حجم الملف كبير جداً (الحد الأقصى 4MB — استخدم صورة أصغر)'; return; }
+          msg.innerText = '⏳ جاري رفع وتشفير هويتك...';
+          try {
+            var b64 = await convertFileToBase64(f.files[0]);
+            var res = await fetchWithAuth('/api/user/kyc', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ kyc_doc: b64 }) });
+            if (res && res.success) {
+              msg.innerHTML = '✅ تم رفع هويتك بنجاحٍ وتشفيرها لدى الإدارة. سيتم مراجعتها قريباً';
+              currentUser.kyc_status = 'pending';
+              renderKYCStatus('pending');
+              if (typeof loadUserNotifications === 'function') loadUserNotifications();
+            } else {
+              msg.innerText = '❌ ' + ((res && res.error) || 'حدث خطأ أثناء الرفع — حاول مجدداً');
+            }
+          } catch(e) {
+            msg.innerText = '❌ فشل الاتصال بالخادم — تأكد من اتصالك بالإنترنت وحاول مجدداً';
+          }
         }
 
         function copyRefLink() { navigator.clipboard.writeText(document.getElementById('ref-link').value); alert('تم نسخ الرابط!'); }
@@ -1771,9 +1958,9 @@ async function submitWithdraw() {
             }
 
             list.innerHTML = referrals.map(function(r) {
-              var kycBadge = r.kyc_status === 'verified' ? '<span style="color:var(--success-green); font-size:11px;">✅ موثق</span>' : (r.kyc_status === 'pending' ? '<span style="color:var(--warning); font-size:11px;">⏳ بانتظار</span>' : '<span style="color:var(--text-muted); font-size:11px;">لم يوثق</span>');
+              var kycBadge = r.kyc_status === 'approved' ? '<span class="kyc-verified-badge"><i class="fa-solid fa-check"></i> موثّق</span>' : (r.kyc_status === 'pending' ? '<span style="color:var(--warning); font-size:11px;">⏳ بانتظار المراجعة</span>' : (r.kyc_status === 'rejected' ? '<span style="color:var(--danger-red); font-size:11px;">مرفوضة</span>' : '<span style="color:var(--text-muted); font-size:11px;">غير موثّق</span>'));
               var dateStr = r.created_at ? new Date(r.created_at).toLocaleDateString('ar-EG') : '';
-              var displayName = r.full_name || ('مستثمر #' + r.id);
+              var displayName = escHtml(r.full_name) || ('مستثمر #' + r.id);
               return '<div class="history-item">' +
                        '<div style="display:flex; align-items:center; gap:10px;">' +
                          '<i class="fa-solid fa-user" style="color:var(--accent-gold); font-size:14px;"></i>' +
@@ -1790,6 +1977,10 @@ async function submitWithdraw() {
         // التحقق التلقائي عند تحميل الصفحة: إذا كان المستثمر مسجلاً مسبقاً، انتقل مباشرة للوحة التحكم
         if (authToken && currentUser) {
           initDashboard();
+        } else if (urlRefCode) {
+          // زائر عبر رابط دعوة: اعرض واجهة إنشاء الحساب مع الاسم مفعّلاً
+          document.getElementById('auth-title').innerText = 'إنشاء حساب جديد';
+          document.getElementById('group-name').style.display = 'block';
         }
         fetchAnnouncementBanner();
       </script>
@@ -1872,6 +2063,11 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
         .badge-status { padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
         .status-pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
         .status-approved, .status-active { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .status-rejected { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .status-completed { background: rgba(59, 130, 246, 0.15); color: var(--info); border: 1px solid rgba(59, 130, 246, 0.3); }
+        /* 🎯 شارة التحقق الزرقاء للمستخدم الموثّق (تظهر بجانب الاسم عند الموافقة فقط) */
+        .kyc-verified-badge { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, #1d9bf0 0%, #0d8bd9 100%); color: #ffffff; font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.35); box-shadow: 0 2px 8px rgba(29, 155, 240, 0.45); vertical-align: middle; margin-right: 6px; white-space: nowrap; }
+        .kyc-verified-badge i { font-size: 9px; }
         .status-completed { background: rgba(59, 130, 246, 0.15); color: var(--info); border: 1px solid rgba(59, 130, 246, 0.3); }
 
         .link-view { color: var(--accent-gold); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; background: rgba(212, 175, 55, 0.1); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(212, 175, 55, 0.2); }
@@ -2184,6 +2380,14 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
 
       <script>
         var adminToken = localStorage.getItem('maksab_admin_token') || null;
+        function escHtml(v) {
+          return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
         function normalizeDigits(value) { return String(value || '').replace(/[٠-٩]/g, function(ch) { return String(ch.charCodeAt(0) - 1632); }).replace(/[۰-۹]/g, function(ch) { return String(ch.charCodeAt(0) - 1776); }); }
         var pricingEditing = false;
         var pricingSaveInFlight = false;
@@ -2228,6 +2432,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             if (target.classList.contains('act-toggle-block')) toggleBlockUser(target.dataset.id, target.dataset.blocked === 'true', target.dataset.name);
             if (target.classList.contains('act-delete-user')) deleteUser(target.dataset.id, target.dataset.name);
             if (target.classList.contains('act-toggle-pkg')) togglePackageStatus(target.dataset.pkg, target.dataset.paused === 'true');
+            if (target.classList.contains('act-kyc-decide')) decideKYC(target.dataset.id, target.dataset.decision, target.dataset.name);
           });
 
           if (adminToken) {
@@ -2560,13 +2765,13 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             }
 
             document.getElementById('dep-table').innerHTML = deposits.map(function(d) {
-              var walletText = d.wallet_type === 'profit' ? '<span style="color:var(--accent-gold);">أرباح/عمولة</span>' : 'رأس مال';
+              var safeDepPhone = escHtml(d.phone_number || '');
               var receiptText = d.receipt_url ? '<a href="' + d.receipt_url + '" target="_blank" class="link-view"><i class="fa-solid fa-eye"></i> معاينة الإشعار</a>' : (d.transaction_ref || '-');
               var statusText = d.status === 'approved' ? '✅ مقبول' : '⏳ قيد الانتظار';
               var actionBtn = d.status === 'pending' ? '<button data-id="' + d.id + '" class="btn-approve act-dep-approve"><i class="fa-solid fa-check"></i> قبول الشحن</button>' : '-';
 
               return '<tr>' +
-                       '<td><strong>' + d.phone_number + '</strong></td>' +
+                       '<td><strong>' + safeDepPhone + '</strong></td>' +
                        '<td><strong style="color:var(--success);">' + Number(d.amount).toLocaleString() + ' د.ع</strong></td>' +
                        '<td>' + walletText + '</td>' +
                        '<td>' + receiptText + '</td>' +
@@ -2579,15 +2784,15 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             renderPackagesTable(packages);
 
             document.getElementById('with-table').innerHTML = withdrawals.map(function(w) {
-              var walletText = w.wallet_type === 'profit' ? 'من الأرباح' : 'من رأس المال';
+              var safeWithPhone = escHtml(w.phone_number || ''); var safeWithAcct = escHtml(w.account_details || ''); var safeWithMethod = escHtml(w.payment_method || '');
               var statusText = w.status === 'approved' ? '✅ مقبول' : '⏳ قيد الانتظار';
               var actionBtn = w.status === 'pending' ? '<button data-id="' + w.id + '" class="btn-approve act-with-approve"><i class="fa-solid fa-check"></i> موافقة على السحب</button>' : '-';
 
               return '<tr>' +
-                       '<td><strong>' + w.phone_number + '</strong></td>' +
+                       '<td><strong>' + safeWithPhone + '</strong></td>' +
                        '<td><strong style="color:var(--danger);">' + Number(w.amount).toLocaleString() + ' د.ع</strong></td>' +
                        '<td>' + walletText + '</td>' +
-                       '<td>' + w.payment_method + ': <code>' + w.account_details + '</code></td>' +
+                       '<td>' + safeWithMethod + ': <code>' + safeWithAcct + '</code></td>' +
                        '<td><span class="badge-status status-' + w.status + '">' + statusText + '</span></td>' +
                        '<td>' + actionBtn + '</td>' +
                      '</tr>';
@@ -2598,8 +2803,25 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
               var isBlocked = u.is_blocked || false;
               var blockedBadge = isBlocked ? '<span style="color:var(--danger); font-size:11px;">(حساب مجمد 🛑)</span>' : '';
               var refName = refUser ? refUser.full_name : '-';
+              // 🛡️ إصلاح 4: تعقيم الاسم قبل إدراجه في innerHTML (حماية XSS)
+              var safeFullName = escHtml(u.full_name || '');
               var kycDocText = u.kyc_doc ? '<a href="' + u.kyc_doc + '" target="_blank" class="link-view"><i class="fa-solid fa-eye"></i> معاينة</a>' : 'غير مرفوع';
-              var kycStatusText = u.kyc_status === 'approved' ? '🔰 موثق' : '⏳ غير موثق';
+              // 🎯 الشارة الزرقاء تظهر بجانب الاسم عند الموافقة فقط — ولا يظهر أي شيء عند الرفض
+              var kycVerifiedBadge = u.kyc_status === 'approved' ? '<span class="kyc-verified-badge"><i class="fa-solid fa-check"></i> موثّق</span>' : '';
+              // عمود الحالة: موافقة (أزرق مع شارة) / رفض (أحمر "مرفوض") / بانتظار (كهرماني)
+              var kycStatusText = u.kyc_status === 'approved' ? '🔰 موثق' : (u.kyc_status === 'rejected' ? '❌ مرفوض' : '⏳ بانتظار المراجعة');
+              // 🎯 أزرار القرار: تظهر بجانب زر المعاينة فقط عندما تكون هناك وثيقة مرفوعة
+              var kycActionBtns = '';
+              if (u.kyc_doc) {
+                if (u.kyc_status === 'pending') {
+                  kycActionBtns = '<button data-id="' + u.id + '" data-decision="approved" data-name="' + safeFullName + '" class="btn-approve act-kyc-decide" style="margin-left:6px;" title="الموافقة على الهوية وإظهار شارة التحقق الزرقاء"><i class="fa-solid fa-check"></i> موافقة</button>' +
+                                  '<button data-id="' + u.id + '" data-decision="rejected" data-name="' + safeFullName + '" class="btn-danger act-kyc-decide" style="margin-left:6px; margin-top:4px;" title="رفض الهوية"><i class="fa-solid fa-xmark"></i> رفض</button>';
+                } else if (u.kyc_status === 'approved') {
+                  kycActionBtns = '<button data-id="' + u.id + '" data-decision="rejected" data-name="' + safeFullName + '" class="btn-danger act-kyc-decide" style="margin-left:6px;" title="إلغاء التوثيق"><i class="fa-solid fa-xmark"></i> إلغاء التوثيق</button>';
+                } else if (u.kyc_status === 'rejected') {
+                  kycActionBtns = '<button data-id="' + u.id + '" data-decision="approved" data-name="' + safeFullName + '" class="btn-approve act-kyc-decide" style="margin-left:6px;" title="إعادة النظر والموافقة"><i class="fa-solid fa-check"></i> موافقة</button>';
+                }
+              }
               var toggleBlockIcon = isBlocked ? '<i class="fa-solid fa-lock-open"></i>' : '<i class="fa-solid fa-ban"></i>';
               var blockBtnClass = isBlocked ? 'btn-approve' : 'btn-danger';
               var safeName = (u.full_name || '').replace(/"/g, '&quot;');
@@ -2618,16 +2840,37 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
                 '</div>' : '<span style="color:var(--text-muted); font-size:11px;">صلاحية مدير رئيسي</span>';
 
               return '<tr>' +
-                       '<td><strong>' + u.full_name + '</strong> ' + blockedBadge + '</td>' +
+                       '<td><strong>' + safeFullName + '</strong> ' + kycVerifiedBadge + ' ' + blockedBadge + '</td>' +
                        '<td>' + u.phone_number + '</td>' +
-                       '<td>' + refName + '</td>' +
-                       '<td>' + kycDocText + '</td>' +
+                       '<td>' + escHtml(refName) + '</td>' +
+                       '<td><div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">' + kycDocText + kycActionBtns + '</div></td>' +
                        '<td><span class="badge-status status-' + u.kyc_status + '">' + kycStatusText + '</span></td>' +
                        '<td>' + adminActions + '</td>' +
                      '</tr>';
             }).join('');
           } catch (err) {
             console.error('خطأ في جلب بيانات الإدارة:', err);
+          }
+        }
+
+        // 🎯 دالة قرار الهوية: ترسل الموافقة/الرفض للباكند ثم تُحدّث الجدول
+        async function decideKYC(userId, decision, userName) {
+          var actionLabel = decision === 'approved' ? 'الموافقة على هوية' : 'رفض هوية';
+          if (!confirm('تأكيد ' + actionLabel + ' المستثمر: ' + (userName || '') + '؟')) return;
+          try {
+            var res = await fetch('/api/admin/users/verify-kyc', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+              body: JSON.stringify({ userId: userId, kyc_status: decision })
+            });
+            var data = await res.json();
+            if (data.success) {
+              loadAdminData();
+            } else {
+              alert('❌ ' + (data.error || 'فشل تنفيذ القرار'));
+            }
+          } catch (e) {
+            alert('❌ خطأ في الاتصال بالسيرفر: ' + e.message);
           }
         }
 
@@ -2722,14 +2965,15 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
           document.getElementById('pkg-table').innerHTML = filteredPackages.map(function(p) {
             var dateFormatted = p.end_date ? new Date(p.end_date).toLocaleDateString('ar-IQ') : '-';
             var statusText = p.status === 'active' ? '⚡ نشطة' : (p.status === 'completed' ? '🎉 مكتملة' : '⏳ قيد الانتظار للموافقة');
-            var cancelBtn = '<button data-id="' + p.id + '" data-name="' + (p.plan_name || '') + '" class="btn-action btn-danger act-pkg-cancel" style="padding:4px 10px; font-size:11px; margin-top:5px;"><i class="fa-solid fa-rotate-left"></i> إلغاء الباقة</button>';
+            var safePkgPhone = escHtml(p.phone_number || ''); var safePkgPlan = escHtml(p.plan_name || '');
+            var cancelBtn = '<button data-id="' + p.id + '" data-name="' + safePkgPlan + '" class="btn-action btn-danger act-pkg-cancel" style="padding:4px 10px; font-size:11px; margin-top:5px;"><i class="fa-solid fa-rotate-left"></i> إلغاء الباقة</button>';
             var actionBtn = p.status === 'pending'
               ? '<button data-id="' + p.id + '" class="btn-approve act-pkg-approve"><i class="fa-solid fa-check"></i> موافقة وتفعيل</button><br>' + cancelBtn
               : (p.status === 'active' ? cancelBtn : '-');
 
             return '<tr>' +
-                     '<td><strong>' + p.phone_number + '</strong></td>' +
-                     '<td><strong style="color:var(--accent-gold);">' + p.plan_name + '</strong></td>' +
+                     '<td><strong>' + safePkgPhone + '</strong></td>' +
+                     '<td><strong style="color:var(--accent-gold);">' + safePkgPlan + '</strong></td>' +
                      '<td>' + Number(p.invested_amount).toLocaleString() + ' د.ع</td>' +
                      '<td><strong style="color:var(--success);">' + Number(p.expected_payout).toLocaleString() + ' د.ع</strong></td>' +
                      '<td>' + dateFormatted + '</td>' +
@@ -3039,17 +3283,45 @@ app.post('/api/admin/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), as
 
 app.post('/api/auth/register', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, res) => {
   try {
-    const { phone_number, password, full_name, referred_by } = req.body;
-    if (!phone_number || String(phone_number).trim().length < 6 || !password || String(password).length < 8 || !full_name || String(full_name).trim().length < 2) {
-      return res.status(400).json({ success: false, error: 'الاسم ورقم الهاتف وكلمة المرور (8 أحرف على الأقل) مطلوبة.' });
+    const { password, full_name, referred_by } = req.body;
+    // 🛡️ إصلاح 5: تطبيع رقم الهاتف + التحقق من صيغته العراقية قبل أي عملية
+    const phone_number = normalizePhone(req.body.phone_number);
+
+    if (!phone_number || !isValidIraqiPhone(phone_number)) {
+      return res.status(400).json({ success: false, error: 'رقم الهاتف غير صحيح. أدخل رقماً عراقياً صحيحاً (مثال: 07701234567).' });
     }
+    if (!password || String(password).length < 8) {
+      return res.status(400).json({ success: false, error: 'كلمة المرور مطلوبة (8 أحرف على الأقل).' });
+    }
+    if (!full_name || String(full_name).trim().length < 2) {
+      return res.status(400).json({ success: false, error: 'الاسم الكامل مطلوب.' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     let validRef = (referred_by && referred_by.trim() !== '' && referred_by !== 'null') ? referred_by.trim() : null;
 
+    // 🛡️ إصلاح 6: التحقق من وجود المُحيل فعلياً في قاعدة البيانات قبل ربط الإحالة
+    // (كان الكود يقبل أي قيمة نصية ويخزنها في referred_by فتضيع الإحالة والعمولة)
+    if (validRef) {
+      const { data: refExists } = await supabase.from('users').select('id, is_blocked').eq('id', validRef).maybeSingle();
+      if (!refExists) {
+        validRef = null; // مُحيل غير موجود → نتجاهل الإحالة بدلاً من تخزين قيمة ميتة
+      } else if (refExists.is_blocked) {
+        validRef = null; // مُحيل محظور → لا يستحق عمولة
+      }
+    }
+
+    // 🛡️ إصلاح 7: كشف التسجيل المكرر عبر جميع الصيغ المحتملة لنفس الرقم
+    // (كان الفحص يعتمد فقط على unique constraint على الصيغة الحرفية، فكان 0770 و 964770 و 770 تعتبر أرقاماً مختلفة)
+    const { data: existing } = await supabase.from('users').select('id').in('phone_number', phoneVariants(phone_number)).limit(1);
+    if (existing && existing.length) {
+      return res.status(400).json({ success: false, error: 'رقم الهاتف مسجل مسبقاً' });
+    }
+
     const { data, error } = await supabase.from('users').insert([{
-      phone_number: phone_number.trim(),
+      phone_number,
       password: hashedPassword,
-      full_name,
+      full_name: String(full_name).trim(),
       kyc_status: 'pending',
       referred_by: validRef
     }]).select();
@@ -3059,11 +3331,13 @@ app.post('/api/auth/register', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), 
     const user = data[0];
     const token = jwt.sign({ id: user.id, phone: user.phone_number }, JWT_SECRET, { expiresIn: '30d' });
 
-    res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, phone_number: user.phone_number } });
+    // 🛡️ إصلاح 8: إرجاع kyc_status مع بيانات المستخدم لعرض شارة الهوية في الواجهة فور التسجيل
+    res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, phone_number: user.phone_number, kyc_status: user.kyc_status } });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 });
+
 
 // نظام تحديد محاولات تسجيل الدخول الفاشلة (5 محاولات → قفل مؤقت 15 دقيقة)
 const loginAttemptsMap = new Map();
@@ -3072,13 +3346,16 @@ const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 دقيقة
 
 app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), async (req, res) => {
   try {
-    const { phone_number, password } = req.body;
+    // 🛡️ إصلاح 5: تطبيع الهاتف ثم البحث عبر كل صيغه (0770/964770/770/‎+964770/00964770)
+    const canonical = normalizePhone(req.body.phone_number);
+    const variants = phoneVariants(canonical);
+    const password = req.body.password;
 
-    if (!phone_number || !password) {
+    if (!req.body.phone_number || !password) {
       return res.status(400).json({ success: false, error: 'يرجى تقديم رقم الهاتف وكلمة المرور' });
     }
 
-    const phoneKey = phone_number.trim();
+    const phoneKey = variants[0];
     const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
     const lockKey = phoneKey + '|' + clientIp;
 
@@ -3089,15 +3366,28 @@ app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), as
       return res.status(429).json({ success: false, error: 'تم قفل الحساب مؤقتاً بسبب محاولات دخول خاطئة متكررة. يرجى المحاولة بعد ' + remainingMin + ' دقيقة.' });
     }
 
-    // تم إضافة عمود 'password' واستخدام 'settingsSupabase' وتعديل .maybeSingle()
-    const { data: user, error } = await settingsSupabase
-      .from('users')
-      .select('id, full_name, phone_number, password, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, created_at')
-      .eq('phone_number', phoneKey)
-      .maybeSingle();
+    // 🛡️ إصلاح 2: عميل موحد (service-role) + مطابقة الهاتف عبر كل الصيغ
+    let user = null;
+    let userError = null;
+    for (const variant of variants) {
+      const { data: found, error: lookupError } = await settingsSupabase
+        .from('users')
+        .select('id, full_name, phone_number, password, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, created_at')
+        .eq('phone_number', variant)
+        .maybeSingle();
+      if (lookupError) { userError = lookupError; continue; }
+      if (found) { user = found; break; }
+    }
 
-    if (error || !user || !user.password) {
+    if (userError && !user) throw new Error('خطأ في قاعدة البيانات: ' + userError.message);
+    if (!user || !user.password) {
       throw new Error('بيانات الدخول غير صحيحة');
+    }
+
+    // 🛡️ إصلاح 9: توحيد الرقم المخزن إلى الصيغة الدولية عند أول دخول ناجح (ترحيل تدريجي للبيانات القديمة)
+    if (user.phone_number !== canonical) {
+      await settingsSupabase.from('users').update({ phone_number: canonical }).eq('id', user.id);
+      user.phone_number = canonical;
     }
 
     if (user.is_blocked) {
@@ -3124,16 +3414,18 @@ app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), as
     loginAttemptsMap.delete(lockKey);
 
     const token = jwt.sign({ id: user.id, phone: user.phone_number }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, phone_number: user.phone_number } });
+    // 🛡️ إصلاح 8: إرجاع kyc_status مع بيانات المستخدم لعرض شارة الهوية فور الدخول
+    res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, phone_number: user.phone_number, kyc_status: user.kyc_status } });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 });
 
+
 app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   try {
     await loadPersistentSettings();
-    const { plan_name, invested_amount, expected_payout, duration_months } = req.body;
+    const { plan_name } = req.body;
 
     if (packageStatusMemory[plan_name] === false) {
       return res.status(400).json({ success: false, error: 'عذراً، هذه الباقة متوقفة مؤقتاً من قبل الإدارة حالياً.' });
@@ -3145,17 +3437,32 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
     const payoutAmount = Number(configuredPlan.payout);
     const duration = Number(configuredPlan.months);
 
-    const { data: deps } = await supabase.from('deposits').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', 'capital');
-    const { data: withs } = await supabase.from('withdrawals').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', 'capital');
+    // 🛡️ إصلاح 13 (منع الإنفاق المزدوج — الخطوة 1): احتساب الباقات المعلّقة ضمن الرصيد المحجوز
+    // ------------------------------------------------------------------
+    // المشكلة القديمة: الفحص كان يخصم السحوبات الموافق عليها فقط، فكان المستخدم يستطيع
+    // طلب 5 باقات بقيمة إجمالية تفوق رصيده لأن "تخصيص الباقة" لا يُسجَّل إلا بعد موافقة الإدارة.
+    // الحل: نحتسب الباقات المعلّقة (المطلوبة ولم تُعتمد بعد) كأموال محجوزة من رأس المال.
+    const [depRes, withRes, pendingPkgsRes] = await Promise.all([
+      supabase.from('deposits').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', 'capital'),
+      supabase.from('withdrawals').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', 'capital'),
+      supabase.from('investment_packages').select('invested_amount').eq('user_id', req.user.id).eq('status', 'pending')
+    ]);
 
-    let totalCapital = (deps || []).reduce((acc, d) => acc + Number(d.amount), 0);
-    let totalWithdrawnCapital = (withs || []).reduce((acc, w) => acc + Number(w.amount), 0);
-    let availableCapital = totalCapital - totalWithdrawnCapital;
+    if (depRes.error) throw depRes.error;
+    if (withRes.error) throw withRes.error;
+    if (pendingPkgsRes.error) throw pendingPkgsRes.error;
+
+    const totalCapital = (depRes.data || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+    const totalWithdrawnCapital = (withRes.data || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+    const pendingReserved = (pendingPkgsRes.data || []).reduce((a, x) => a + Number(x.invested_amount || 0), 0);
+
+    // 🛡️ إصلاح 14: الرصيد المتاح = رأس المال − المسحوب − المحجوز للباقات المعلقة
+    const availableCapital = totalCapital - totalWithdrawnCapital - pendingReserved;
 
     if (availableCapital < amountNeeded) {
       return res.status(400).json({
         success: false,
-        error: `رصيدك المتاح (${availableCapital.toLocaleString()} د.ع) غير كافٍ للاشتراك بهذه الباقة.`
+        error: `رصيدك المتاح (${Math.max(availableCapital, 0).toLocaleString()} د.ع) غير كافٍ للاشتراك بهذه الباقة (المطلوب ${amountNeeded.toLocaleString()} د.ع). قد يكون لديك طلب باقة معلّق يحجز جزءاً من رصيدك.`
       });
     }
 
@@ -3191,12 +3498,35 @@ app.post('/api/packages/subscribe', authenticateUser, async (req, res) => {
   }
 });
 
+
 app.patch('/api/admin/packages/approve', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.body;
     const { data: pkg } = await supabase.from('investment_packages').select('*').eq('id', id).single();
 
     if (!pkg) return res.status(404).json({ success: false, error: 'الباقة غير موجودة' });
+
+    // 🛡️ إصلاح 13 (منع الإنفاق المزدوج — الخطوة 2): إعادة فحص رأس المال المتاح وقت الاعتماد
+    // ------------------------------------------------------------------
+    // حتى لو تجاوز المستخدم فحص الاشتراك، نضمن هنا أن مجموع الباقات المعلقة لا يتجاوز رأس ماله الفعلي.
+    const [depRes2, withRes2, pendingRes2] = await Promise.all([
+      supabase.from('deposits').select('amount').eq('user_id', pkg.user_id).eq('status', 'approved').eq('wallet_type', 'capital'),
+      supabase.from('withdrawals').select('amount').eq('user_id', pkg.user_id).eq('status', 'approved').eq('wallet_type', 'capital'),
+      supabase.from('investment_packages').select('id, invested_amount').eq('user_id', pkg.user_id).eq('status', 'pending')
+    ]);
+    if (depRes2.error) throw depRes2.error;
+    if (withRes2.error) throw withRes2.error;
+    if (pendingRes2.error) throw pendingRes2.error;
+
+    const totalCap = (depRes2.data || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+    const totalOut = (withRes2.data || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+    // الباقات المعلقة الأخرى (غير هذه الباقة) — لأن هذه ستتحول لسحب تخصيص عند الاعتماد
+    const otherPending = (pendingRes2.data || []).filter(p => String(p.id) !== String(pkg.id)).reduce((a, x) => a + Number(x.invested_amount || 0), 0);
+
+    if (totalCap - totalOut - otherPending < Number(pkg.invested_amount)) {
+      return res.status(409).json({ success: false, error: `لا يمكن اعتماد الباقة: رأس مال المستثمر غير كافٍ لتغطية مجموع الباقات المعلقة (المطلوب ${Number(pkg.invested_amount).toLocaleString()} د.ع لهذه الباقة). يرجى رفض الطلبات الزائدة أولاً.` });
+    }
+
     if (pkg.status !== 'pending') return res.status(409).json({ success: false, error: 'لا يمكن اعتماد الباقة من حالتها الحالية.' });
 
     await supabase.from('withdrawals').insert([{
@@ -3280,18 +3610,33 @@ app.delete('/api/admin/packages/cancel', authenticateAdmin, async (req, res) => 
 });
 
 app.get('/api/user/notifications', authenticateUser, async (req, res) => {
-  const { data } = await supabase.from('notifications').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(20);
-  res.json({ success: true, data: data || [] });
+  try {
+    const { data } = await supabase.from('notifications').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(20);
+    res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('[user-notifications] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/user/notifications/read', authenticateUser, async (req, res) => {
-  await supabase.from('notifications').update({ is_read: true }).eq('user_id', req.user.id);
-  res.json({ success: true });
+  try {
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', req.user.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[notifications-read] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/user/packages', authenticateUser, async (req, res) => {
-  const { data } = await supabase.from('investment_packages').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false });
-  res.json({ success: true, data: data || [] });
+  try {
+    const { data } = await supabase.from('investment_packages').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false });
+    res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('[user-packages] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 const MIN_DEPOSIT_AMOUNT = 100000;
@@ -3332,54 +3677,47 @@ app.post('/api/deposits', authenticateUser, async (req, res) => {
 
 app.post('/api/withdrawals', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1000, max: 10 }), async (req, res) => {
   try {
-    const { amount, payment_method, account_details } = req.body;
-    
-    // التحقق من صحة المبلغ المالي
-    const numAmount = typeof positiveAmount === 'function' ? positiveAmount(amount, 100000000) : Number(amount);
+    const { payment_method, account_details } = req.body;
+    // 🛡️ إصلاح 10: تطبيع المبلغ (كان يستقبل قيماً نصية/عربية ويقبلها أو يرفضها بشكل متقلب)
+    const numAmount = positiveAmount(normalizeDigits(req.body.amount), 100000000);
 
     if (!numAmount || numAmount <= 0 || !payment_method || !account_details) {
       return res.status(400).json({ success: false, error: 'بيانات السحب غير صحيحة.' });
     }
 
-    // 1. حساب إجمالي أرباح الباقات المكتملة فقط للمستثمر
-    const { data: completedPackages, error: pkgErr } = await settingsSupabase
-      .from('user_packages')
-      .select('earned_profit')
-      .eq('user_id', req.user.id)
-      .eq('status', 'completed');
+    // 🛡️ إصلاح 11 (الحرج الأول): إعادة كتابة حساب رصيد الأرباح المتاح للسحب بنمط دفتر الأستاذ
+    // ------------------------------------------------------------------
+    // المشكلة القديمة: كان الاستعلام يقرأ من جدول وهمي user_packages بعمود earned_profit
+    // لا وجود لهما في أي مكان آخر بالكود → فشل كل طلبات السحب أو اعتبار الأرباح صفراً.
+    // الحل: نفس منطق الواجهة (loadUserData) لكن على الخادم وبمصدر واحد موثوق:
+    //   رصيد الأرباح = مجموع إيداعات محفظة الأرباح الموافق عليها − مجموع سحوبات الأرباح (موافق عليها أو معلقة)
+    // إيداعات الأرباح = دفعات الباقات (PAYOUT_PKG_*) + عمولات الإحالة (COMMISSION_*) + إيداعات أرباح يدوية
+    const [depRes, withRes] = await Promise.all([
+      supabase.from('deposits').select('amount').eq('user_id', req.user.id).eq('status', 'approved').eq('wallet_type', 'profit'),
+      supabase.from('withdrawals').select('amount').eq('user_id', req.user.id).in('status', ['approved', 'pending']).eq('wallet_type', 'profit')
+    ]);
 
-    if (pkgErr) throw pkgErr;
+    if (depRes.error) throw depRes.error;
+    if (withRes.error) throw withRes.error;
 
-    const totalCompletedProfit = (completedPackages || []).reduce((a, x) => a + Number(x.earned_profit || 0), 0);
-
-    // 2. حساب إجمالي السحوبات السابقة (المقبولة والمعلقة)
-    const { data: withRows, error: withErr } = await settingsSupabase
-      .from('withdrawals')
-      .select('amount')
-      .eq('user_id', req.user.id)
-      .in('status', ['approved', 'pending']);
-
-    if (withErr) throw withErr;
-
-    const totalWithdrawn = (withRows || []).reduce((a, x) => a + Number(x.amount || 0), 0);
-
-    // الرصيد الصافي المتاح للسحب
-    const available = totalCompletedProfit - totalWithdrawn;
+    const totalProfitIn = (depRes.data || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+    const totalProfitOut = (withRes.data || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+    const available = totalProfitIn - totalProfitOut;
 
     if (numAmount > available) {
       return res.status(400).json({
         success: false,
-        error: `الرصيد المتاح للسحب من أرباح الباقات المكتملة هو ${available.toLocaleString()} د.ع فقط.`
+        error: `الرصيد المتاح للسحب من محفظة الأرباح هو ${available.toLocaleString()} د.ع فقط.`
       });
     }
 
-    // 3. تسجيل طلب السحب
-    const { error } = await settingsSupabase.from('withdrawals').insert([{
+    // 🛡️ إصلاح 12: السحب من محفظة الأرباح فقط (wallet_type: 'profit') — وهو ما يفرضه الحساب أعلاه
+    const { error } = await supabase.from('withdrawals').insert([{
       user_id: req.user.id,
       phone_number: req.user.phone || req.user.phone_number,
       amount: numAmount,
-      payment_method, // يرسل إما ZainCash أو SuperKey
-      account_details, // يحتوي على رقم المحفظة أو رقم الحساب
+      payment_method,
+      account_details,
       status: 'pending',
       wallet_type: 'profit'
     }]);
@@ -3392,35 +3730,93 @@ app.post('/api/withdrawals', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1
   }
 });
 
-app.post('/api/user/kyc', authenticateUser, async (req, res) => {
+
+app.post('/api/user/kyc', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }), async (req, res) => {
   try {
-    // 🟢 الرفع إلى مجلد الهويات في Supabase Storage
+    // 🛡️ إصلاح 15: تحقق من وجود المستند ومن صيغة base64 قبل الرفع
+    if (!req.body.kyc_doc || typeof req.body.kyc_doc !== 'string' || !req.body.kyc_doc.startsWith('data:image/')) {
+      return res.status(400).json({ success: false, error: 'صيغة المستند غير صحيحة. يرجى رفع صورة صالحة.' });
+    }
+
     const publicUrl = await uploadToStorage(req.body.kyc_doc, 'kyc-documents');
-    
+
+    // 🎯 المطلوب الأساسي: بعد الرفع تعود الحالة "بانتظار المراجعة" إلى أن يقرر المدير
     await supabase.from('users').update({ kyc_doc: publicUrl, kyc_status: 'pending' }).eq('id', req.user.id);
-    res.json({ success: true });
+
+    // إشعار المدير/المستثمر بأن هوية جديدة بانتظار المراجعة
+    await supabase.from('notifications').insert([{
+      user_id: req.user.id,
+      title: '🪪 رفع هوية بانتظار المراجعة',
+      message: 'تم استلام وثيقة هويتك بنجاح. ستظهر شارة التحقق الزرقاء بجانب اسمك بعد موافقة الإدارة.'
+    }]);
+
+    res.json({ success: true, kyc_status: 'pending' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
+// 🆕 مسار جديد: جلب حالة الهوية الحالية للمستثمر (تستخدمه الواجهة للتحديث الدوري دون إعادة دخول)
+app.get('/api/user/me', authenticateUser, async (req, res) => {
+  try {
+    const { data: user, error } = await supabase.from('users')
+      .select('id, full_name, phone_number, kyc_status, kyc_doc, telegram_chat_id, created_at')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!user) return res.status(404).json({ success: false, error: 'المستخدم غير موجود' });
+
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// 🔔 إصلاح OneSignal: مسار حفظ معرّف الجهاز (player id) من المتصفح — كان الإرسال لللاعبين المحفوظين في users.onesignal_player_id لا يُسجَّل أبداً
+app.post('/api/user/push-token', authenticateUser, async (req, res) => {
+  try {
+    const { player_id } = req.body || {};
+    if (!player_id || typeof player_id !== 'string' || player_id.length < 10 || player_id.length > 120 || !/^[0-9a-fA-F-]+$/.test(player_id)) {
+      return res.status(400).json({ success: false, error: 'معرّف جهاز غير صالح.' });
+    }
+    const { error } = await supabase.from('users').update({ onesignal_player_id: player_id }).eq('id', req.user.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[push-token] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 app.get('/api/user/deposits', authenticateUser, async (req, res) => {
-  const { data } = await supabase.from('deposits').select('*').eq('user_id', req.user.id);
-  res.json({ success: true, data: data || [] });
+  try {
+    const { data } = await supabase.from('deposits').select('*').eq('user_id', req.user.id);
+    res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('[user-deposits] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/user/withdrawals', authenticateUser, async (req, res) => {
-  const { data } = await supabase.from('withdrawals').select('*').eq('user_id', req.user.id);
-  res.json({ success: true, data: data || [] });
+  try {
+    const { data } = await supabase.from('withdrawals').select('*').eq('user_id', req.user.id);
+    res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('[user-withdrawals] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // API موحد: سجل جميع المعاملات (شحن + سحب + باقات) + إجمالي الأرباح المحققة
 app.get('/api/user/transactions', authenticateUser, async (req, res) => {
   try {
-    const [depRes, withRes, pkgRes] = await Promise.all([
+    const [depRes, withRes, pkgRes, comRes] = await Promise.all([
       supabase.from('deposits').select('*').eq('user_id', req.user.id),
       supabase.from('withdrawals').select('*').eq('user_id', req.user.id),
-      supabase.from('investment_packages').select('*').eq('user_id', req.user.id)
+      supabase.from('investment_packages').select('*').eq('user_id', req.user.id),
+      supabase.from('deposits').select('amount, status, transaction_ref').eq('user_id', req.user.id).eq('status', 'approved').like('transaction_ref', 'COMMISSION_%')
     ]);
 
     const deposits = (depRes.data || []).map(function(d) {
@@ -3442,6 +3838,10 @@ app.get('/api/user/transactions', authenticateUser, async (req, res) => {
       if (p.status === 'completed') {
         totalRealizedProfit += (Number(p.expected_payout) - Number(p.invested_amount));
       }
+    });
+    // عمولات الإحالات المعتمدة جزء من الأرباح المحققة
+    (comRes.data || []).forEach(function(c) {
+      totalRealizedProfit += Number(c.amount) || 0;
     });
 
     res.json({ success: true, data: allTransactions, total_profit: totalRealizedProfit });
@@ -3482,13 +3882,23 @@ app.get('/api/user/referrals', authenticateUser, async (req, res) => {
 });
 
 app.get('/api/admin/deposits', authenticateAdmin, async (req, res) => {
-  const { data } = await supabase.from('deposits').select('*').order('created_at', { ascending: false });
-  res.json({ success: true, data: data || [] });
+  try {
+    const { data } = await supabase.from('deposits').select('*').order('created_at', { ascending: false });
+    res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('[admin-deposits] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/admin/withdrawals', authenticateAdmin, async (req, res) => {
-  const { data } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
-  res.json({ success: true, data: data || [] });
+  try {
+    const { data } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
+    res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('[admin-withdrawals] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
@@ -3515,30 +3925,88 @@ app.get('/api/admin/packages', authenticateAdmin, async (req, res) => {
 });
 
 app.patch('/api/admin/users/verify-kyc', authenticateAdmin, async (req, res) => {
-  await supabase.from('users').update({ kyc_status: 'approved' }).eq('id', req.body.userId);
-  res.json({ success: true });
+  try {
+    // 🎯 المطلوب الأساسي: دعم القرارين — approved (موافقة) أو rejected (رفض)
+    const { userId, kyc_status } = req.body;
+    const decision = String(kyc_status || '').toLowerCase();
+
+    if (!userId || !['approved', 'rejected', 'pending'].includes(decision)) {
+      return res.status(400).json({ success: false, error: 'قرار غير صالح. المسموح: approved / rejected / pending' });
+    }
+
+    // جلب المستخدم قبل التحديث (للتحقق من وجوده وقراءة بيانات الإشعار)
+    const { data: targetUser } = await supabase.from('users')
+      .select('id, full_name, kyc_doc, telegram_chat_id, onesignal_player_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!targetUser) return res.status(404).json({ success: false, error: 'المستخدم غير موجود' });
+
+    // الرفض يتطلب أن تكون هناك وثيقة مرفوعة أصلاً (لا معنى لرفض الهوية غير المرفوعة)
+    if (decision === 'rejected' && !targetUser.kyc_doc) {
+      return res.status(400).json({ success: false, error: 'لا توجد وثيقة هوية مرفوعة لهذا المستخدم لرفضها.' });
+    }
+
+    const { error } = await supabase.from('users').update({ kyc_status: decision }).eq('id', userId);
+    if (error) throw error;
+
+    // 📢 إشعار المستثمر بالقرار عبر كل القنوات (in-app + OneSignal + تيليجرام)
+    if (decision !== 'pending') {
+      const approvedMsg = 'تمت الموافقة على هويتك بنجاح ✅ — تظهر الآن شارة التحقق الزرقاء بجانب اسمك.';
+      const rejectedMsg = 'تم رفض وثيقة الهوية المرفوعة. يرجى رفع صورة أوضح وصحيحة لبطاقة الهوية ثم إعادة المحاولة.';
+      const notifTitle = decision === 'approved' ? '✅ تم توثيق هويتك' : '❌ رفض وثيقة الهوية';
+      const notifMsg = decision === 'approved' ? approvedMsg : rejectedMsg;
+
+      await supabase.from('notifications').insert([{
+        user_id: userId,
+        title: notifTitle,
+        message: notifMsg
+      }]);
+
+      if (targetUser.onesignal_player_id) {
+        await sendOneSignalNotification([targetUser.onesignal_player_id], notifTitle, notifMsg);
+      }
+      if (targetUser.telegram_chat_id) {
+        const tg = decision === 'approved'
+          ? `✅ <b>تم توثيق هويتك!</b>\n\n${approvedMsg}`
+          : `❌ <b>رفض وثيقة الهوية</b>\n\n${rejectedMsg}`;
+        await sendTelegramNotification(targetUser.telegram_chat_id, tg);
+      }
+    }
+
+    const decisionText = decision === 'approved' ? 'الموافقة والتوثيق' : (decision === 'rejected' ? 'الرفض' : 'إعادة التعيين لانتظار المراجعة');
+    res.json({ success: true, message: `تم تنفيذ قرار (${decisionText}) على هوية المستخدم ${targetUser.full_name} بنجاح.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) => {
-  const { id, status } = req.body;
-  await supabase.from('withdrawals').update({ status }).eq('id', id);
 
-  if (status === 'approved') {
-    const { data: withItem } = await supabase.from('withdrawals').select('*').eq('id', id).single();
-    if (withItem) {
-      const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', withItem.user_id).single();
-      if (usr) {
-        if (usr.onesignal_player_id) {
-          await sendOneSignalNotification([usr.onesignal_player_id], "💸 موافقة على السحب", `تمت الموافقة على سحب مبلغ ${Number(withItem.amount).toLocaleString()} د.ع.`);
-        }
-        if (usr.telegram_chat_id) {
-          await sendTelegramNotification(usr.telegram_chat_id, `💸 <b>موافقة على طلب السحب!</b>\n\nتمت الموافقة على طلب سحب مبلغ <b>${Number(withItem.amount).toLocaleString()} د.ع</b> وتحويله لحسابك.`);
+app.patch('/api/admin/withdrawals/status', authenticateAdmin, async (req, res) => {
+  try {
+    const { id, status } = req.body;
+    await supabase.from('withdrawals').update({ status }).eq('id', id);
+
+    if (status === 'approved') {
+      const { data: withItem } = await supabase.from('withdrawals').select('*').eq('id', id).single();
+      if (withItem) {
+        const { data: usr } = await supabase.from('users').select('telegram_chat_id, onesignal_player_id').eq('id', withItem.user_id).single();
+        if (usr) {
+          if (usr.onesignal_player_id) {
+            await sendOneSignalNotification([usr.onesignal_player_id], "💸 موافقة على السحب", `تمت الموافقة على سحب مبلغ ${Number(withItem.amount).toLocaleString()} د.ع.`);
+          }
+          if (usr.telegram_chat_id) {
+            await sendTelegramNotification(usr.telegram_chat_id, `💸 <b>موافقة على طلب السحب!</b>\n\nتمت الموافقة على طلب سحب مبلغ <b>${Number(withItem.amount).toLocaleString()} د.ع</b> وتحويله لحسابك.`);
+          }
         }
       }
     }
-  }
 
-  res.json({ success: true });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[admin-withdrawals-status] error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.patch('/api/admin/deposits/status', authenticateAdmin, async (req, res) => {
@@ -3805,6 +4273,11 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, requireSuperAdmin, asy
   try {
     const { userId } = req.params;
 
+    // 🧹 إصلاح حذف المستخدم: تنظيف المُحالين (referred_by) لتفادي مفاتيح أيتام
+    // لو حُذف مستثمر كان مُحيلًا لآخرين، نصفّر referred_by لديهم قبل حذفه
+    await supabase.from('users')
+      .update({ referred_by: null })
+      .eq('referred_by', userId);
     await supabase.from('notifications').delete().eq('user_id', userId);
     await supabase.from('investment_packages').delete().eq('user_id', userId);
     await supabase.from('deposits').delete().eq('user_id', userId);
@@ -3825,10 +4298,6 @@ app.delete('/api/admin/users/:userId', authenticateAdmin, requireSuperAdmin, asy
 });
 
 // ==========================================
-// إشعار قبل اكتمال الباقة بـ 24 ساعة (فحص دوري كل ساعة)
-// ==========================================
-// ==========================================
-// إشعار قبل اكتمال الباقة بـ 24 ساعة (مع حماية التكرار)
 // ==========================================
 async function checkPreCompletionPackages() {
   try {
@@ -3887,6 +4356,17 @@ async function checkPreCompletionPackages() {
   }
 }
 const PORT = process.env.PORT || 3000;
+
+// ⏰ إصلاح 22: جدولة الفحص الدوري لإشعارات ما قبل الاكتمال — كان معرفاً فقط ولا يُستدعى من أي مكان
+setInterval(() => {
+  checkPreCompletionPackages().catch(function(err) {
+    console.error('خطأ في الجدولة الدورية لإشعار ما قبل الاكتمال:', err.message);
+  });
+}, 60 * 60 * 1000); // كل ساعة
+
+checkPreCompletionPackages().catch(function(err) {
+  console.error('خطأ في أول تشغيل لإشعار ما قبل الاكتمال:', err.message);
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
