@@ -69,6 +69,22 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // 🔒 الإصلاح الأمني 2: سياسة أمن المحتوى (CSP) — تقييد المصادر الخارجية للمعروفة فقط
+  // inline scripts/styles ضرورية هنا لأن الواجهات مبنية كـ template literals داخلية
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' https://cdn.onesignal.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; " +
+    "img-src 'self' data: blob: https://img.icons8.com https://*.supabase.co; " +
+    "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; " +
+    "connect-src 'self' https://cdn.onesignal.com https://onesignal.com https://*.supabase.co; " +
+    "worker-src 'self' blob:; " +
+    "object-src 'none'; " +
+    "frame-ancestors 'none'; " +
+    "base-uri 'self'; " +
+    "form-action 'self'; " +
+    "upgrade-insecure-requests"
+  );
   next();
 });
 app.use(express.json({ limit: '8mb' }));
@@ -787,6 +803,30 @@ async function uploadToStorage(base64Data, folderName = 'receipts') {
 }
 
 // ==========================================
+// 🔒 الإصلاح الأمني 1: رابط موقّع مؤقت (10 دقائق) للوثائق الحساسة
+// الوثيقة لا تُعرض برابط عام دائم — بل برابط يُولَّد لحظة المعاينة فقط
+// ==========================================
+const KYC_SIGNED_URL_TTL = 60 * 10; // ثوانٍ
+async function getSignedDocUrl(publicUrl, ttlSeconds = KYC_SIGNED_URL_TTL) {
+  try {
+    if (!publicUrl || typeof publicUrl !== 'string') return null;
+    // استخراج مسار الملف داخل الحاوية من الرابط العام المخزّن
+    const marker = '/object/public/maksab-uploads/';
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return null; // ليس رابط حاوية عام (بيانات قديمة أو AUTO_*)
+    const filePath = publicUrl.slice(idx + marker.length).split('?')[0];
+    const { data, error } = await settingsSupabase.storage
+      .from('maksab-uploads')
+      .createSignedUrl(filePath, ttlSeconds);
+    if (error || !data || !data.signedUrl) return null;
+    return data.signedUrl;
+  } catch (e) {
+    console.error('signed url error:', e.message);
+    return null;
+  }
+}
+
+// ==========================================
 // برمجيات التوثيق والحماية والتحقق من الصلاحيات
 // ==========================================
 // أدوات حماية عامة: تحديد المعدل، تنظيف Telegram، والتحقق من الأرقام.
@@ -820,9 +860,16 @@ const authenticateUser = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err || !user?.id) return res.status(403).json({ success: false, error: 'جلسة انتهت صلاحيتها، أعد الدخول' });
-    const { data: currentUser, error } = await supabase.from('users').select('id, phone_number, is_blocked').eq('id', user.id).single();
+    const { data: currentUser, error } = await supabase.from('users').select('id, phone_number, is_blocked, pwd_version').eq('id', user.id).single();
     if (error || !currentUser) return res.status(401).json({ success: false, error: 'الحساب غير موجود.' });
     if (currentUser.is_blocked) return res.status(403).json({ success: false, error: 'تم تجميد حسابك بقرار إداري.' });
+    // 🔒 الإصلاح الأمني 3: إبطال فوري لكل الجلسات القديمة بعد تغيير كلمة المرور
+    // (لو غاب العمود pwd_version من قاعدة البيانات نتعامل معه كأنه 0 — لا يكسر التوكنات القديمة)
+    const dbPwdVersion = Number(currentUser.pwd_version) || 0;
+    const tokenPwdVersion = Number(user.pwd_v) || 0;
+    if (dbPwdVersion !== tokenPwdVersion) {
+      return res.status(401).json({ success: false, error: 'تم تحديث بيانات الدخول — أعد تسجيل الدخول' });
+    }
     req.user = { ...user, id: currentUser.id, phone: currentUser.phone_number };
     next();
   });
@@ -1248,6 +1295,18 @@ app.get('/app', (req, res) => {
     <input type="file" id="kyc-file" accept="image/*" style="margin-bottom:10px;">
     <button class="btn-gold" onclick="uploadKYC()">رفع الهوية بأمان</button>
     <p id="kyc-msg" style="font-size:12px;"></p>
+  </div>
+
+  <div class="section-card" style="border:1px solid var(--accent-gold);">
+    <h3>🔐 تغيير كلمة المرور</h3>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">تغيير كلمة المرور يُنهي جميع الجلسات النشطة على جميع الأجهزة فوراً — ستحتاج لتسجيل الدخول من جديد على أي جهاز آخر.</p>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <input type="password" id="pw-current" placeholder="كلمة المرور الحالية" style="background:#0f172a; border:1px solid var(--border-color); color:var(--text-main); padding:12px; border-radius:8px;">
+      <input type="password" id="pw-new" placeholder="كلمة المرور الجديدة (8 أحرف على الأقل)" style="background:#0f172a; border:1px solid var(--border-color); color:var(--text-main); padding:12px; border-radius:8px;">
+      <input type="password" id="pw-confirm" placeholder="تأكيد كلمة المرور الجديدة" style="background:#0f172a; border:1px solid var(--border-color); color:var(--text-main); padding:12px; border-radius:8px;">
+      <button class="btn-gold" onclick="changePassword()"><i class="fa-solid fa-key"></i> تغيير كلمة المرور</button>
+      <p id="pw-msg" style="font-size:12px;"></p>
+    </div>
   </div>
 
   <div class="section-card">
@@ -1939,6 +1998,45 @@ async function submitWithdraw() {
           }
         }
 
+        // 🔒 الإصلاح الأمني 3: دالة تغيير كلمة المرور — تُنهي كل الجلسات الأخرى وتحدّث التوكن المحلي
+        async function changePassword() {
+          var current = document.getElementById('pw-current').value;
+          var nw = document.getElementById('pw-new').value;
+          var cf = document.getElementById('pw-confirm').value;
+          var msg = document.getElementById('pw-msg');
+          if (!current || !nw || !cf) { msg.style.color = 'var(--danger-red)'; msg.innerText = '❌ يرجى تعبئة جميع الحقول'; return; }
+          if (nw.length < 8) { msg.style.color = 'var(--danger-red)'; msg.innerText = '❌ كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل'; return; }
+          if (nw !== cf) { msg.style.color = 'var(--danger-red)'; msg.innerText = '❌ كلمتا المرور الجديدتان غير متطابقتين'; return; }
+          msg.style.color = 'var(--text-muted)'; msg.innerText = '⏳ جارٍ تغيير كلمة المرور...';
+          try {
+            var res = await fetch('/api/user/change-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+              body: JSON.stringify({ current_password: current, new_password: nw })
+            });
+            var data = await res.json();
+            if (data.success && data.token) {
+              // تحديث التوكن المحلي — هذه الجلسة تبقى نشطة، وبقية الأجهزة تُطرد فوراً
+              authToken = data.token;
+              localStorage.setItem('maksab_token', authToken);
+              msg.style.color = 'var(--success-green)';
+              msg.innerText = '✅ ' + (data.message || 'تم تغيير كلمة المرور بنجاح');
+              document.getElementById('pw-current').value = '';
+              document.getElementById('pw-new').value = '';
+              document.getElementById('pw-confirm').value = '';
+            } else if (res.status === 401 || res.status === 403) {
+              // انتهت صلاحية التوكن (مثلاً غُيّرت كلمة المرور من جهاز آخر) — خروج آمن
+              logout();
+            } else {
+              msg.style.color = 'var(--danger-red)';
+              msg.innerText = '❌ ' + (data.error || 'فشل تغيير كلمة المرور');
+            }
+          } catch (e) {
+            msg.style.color = 'var(--danger-red)';
+            msg.innerText = '❌ فشل الاتصال بالخادم: ' + e.message;
+          }
+        }
+
         function copyRefLink() { navigator.clipboard.writeText(document.getElementById('ref-link').value); alert('تم نسخ الرابط!'); }
 
         async function loadReferralNetwork() {
@@ -2433,6 +2531,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             if (target.classList.contains('act-delete-user')) deleteUser(target.dataset.id, target.dataset.name);
             if (target.classList.contains('act-toggle-pkg')) togglePackageStatus(target.dataset.pkg, target.dataset.paused === 'true');
             if (target.classList.contains('act-kyc-decide')) decideKYC(target.dataset.id, target.dataset.decision, target.dataset.name);
+            if (target.classList.contains('act-kyc-view')) viewKycDoc(target.dataset.id);
           });
 
           if (adminToken) {
@@ -2766,6 +2865,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
 
             document.getElementById('dep-table').innerHTML = deposits.map(function(d) {
               var safeDepPhone = escHtml(d.phone_number || '');
+              var walletText = d.wallet_type === 'profit' ? 'محفطة الأرباح' : 'رأس المال';
               var receiptText = d.receipt_url ? '<a href="' + d.receipt_url + '" target="_blank" class="link-view"><i class="fa-solid fa-eye"></i> معاينة الإشعار</a>' : (d.transaction_ref || '-');
               var statusText = d.status === 'approved' ? '✅ مقبول' : '⏳ قيد الانتظار';
               var actionBtn = d.status === 'pending' ? '<button data-id="' + d.id + '" class="btn-approve act-dep-approve"><i class="fa-solid fa-check"></i> قبول الشحن</button>' : '-';
@@ -2785,6 +2885,7 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
 
             document.getElementById('with-table').innerHTML = withdrawals.map(function(w) {
               var safeWithPhone = escHtml(w.phone_number || ''); var safeWithAcct = escHtml(w.account_details || ''); var safeWithMethod = escHtml(w.payment_method || '');
+              var walletText = w.wallet_type === 'profit' ? 'محفطة الأرباح' : 'رأس مال';
               var statusText = w.status === 'approved' ? '✅ مقبول' : '⏳ قيد الانتظار';
               var actionBtn = w.status === 'pending' ? '<button data-id="' + w.id + '" class="btn-approve act-with-approve"><i class="fa-solid fa-check"></i> موافقة على السحب</button>' : '-';
 
@@ -2805,14 +2906,15 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
               var refName = refUser ? refUser.full_name : '-';
               // 🛡️ إصلاح 4: تعقيم الاسم قبل إدراجه في innerHTML (حماية XSS)
               var safeFullName = escHtml(u.full_name || '');
-              var kycDocText = u.kyc_doc ? '<a href="' + u.kyc_doc + '" target="_blank" class="link-view"><i class="fa-solid fa-eye"></i> معاينة</a>' : 'غير مرفوع';
+              // 🔒 الإصلاح الأمني 1: معاينة الوثيقة عبر رابط موقّع مؤقت (10 دقائق) — لا رابط عام دائم
+              var kycDocText = u.has_kyc_doc ? '<button data-id="' + u.id + '" class="link-view act-kyc-view" style="border:none; cursor:pointer; font-family:inherit;"><i class="fa-solid fa-eye"></i> معاينة (رابط مؤقت)</button>' : 'غير مرفوع';
               // 🎯 الشارة الزرقاء تظهر بجانب الاسم عند الموافقة فقط — ولا يظهر أي شيء عند الرفض
               var kycVerifiedBadge = u.kyc_status === 'approved' ? '<span class="kyc-verified-badge"><i class="fa-solid fa-check"></i> موثّق</span>' : '';
               // عمود الحالة: موافقة (أزرق مع شارة) / رفض (أحمر "مرفوض") / بانتظار (كهرماني)
               var kycStatusText = u.kyc_status === 'approved' ? '🔰 موثق' : (u.kyc_status === 'rejected' ? '❌ مرفوض' : '⏳ بانتظار المراجعة');
               // 🎯 أزرار القرار: تظهر بجانب زر المعاينة فقط عندما تكون هناك وثيقة مرفوعة
               var kycActionBtns = '';
-              if (u.kyc_doc) {
+              if (u.has_kyc_doc) {
                 if (u.kyc_status === 'pending') {
                   kycActionBtns = '<button data-id="' + u.id + '" data-decision="approved" data-name="' + safeFullName + '" class="btn-approve act-kyc-decide" style="margin-left:6px;" title="الموافقة على الهوية وإظهار شارة التحقق الزرقاء"><i class="fa-solid fa-check"></i> موافقة</button>' +
                                   '<button data-id="' + u.id + '" data-decision="rejected" data-name="' + safeFullName + '" class="btn-danger act-kyc-decide" style="margin-left:6px; margin-top:4px;" title="رفض الهوية"><i class="fa-solid fa-xmark"></i> رفض</button>';
@@ -2850,6 +2952,23 @@ app.get('/secure-portal-exec-9921x', executiveShieldAuth, (req, res) => {
             }).join('');
           } catch (err) {
             console.error('خطأ في جلب بيانات الإدارة:', err);
+          }
+        }
+
+        // 🔒 الإصلاح الأمني 1: دالة معاينة الوثيقة بـ رابط موقّع مؤقت — تجلب الرابط من الخادم ثم تفتحه
+        async function viewKycDoc(userId) {
+          try {
+            var res = await fetch('/api/admin/users/kyc-doc/' + userId, {
+              headers: { 'Authorization': 'Bearer ' + adminToken }
+            });
+            var data = await res.json();
+            if (data.success && data.url) {
+              window.open(data.url, '_blank');
+            } else {
+              alert('❌ ' + (data.error || 'تعذر جلب رابط المعاينة'));
+            }
+          } catch (e) {
+            alert('❌ خطأ في الاتصال بالخادم: ' + e.message);
           }
         }
 
@@ -3329,7 +3448,8 @@ app.post('/api/auth/register', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), 
     if (error) throw new Error(error.code === '23505' ? 'رقم الهاتف مسجل مسبقاً' : error.message);
 
     const user = data[0];
-    const token = jwt.sign({ id: user.id, phone: user.phone_number }, JWT_SECRET, { expiresIn: '30d' });
+    // 🔒 الإصلاح الأمني 3: إصدار pwd_v في التوكن — يُستخدم لإبطال الجلسات عند تغيير كلمة المرور
+    const token = jwt.sign({ id: user.id, phone: user.phone_number, pwd_v: Number(user.pwd_version) || 0 }, JWT_SECRET, { expiresIn: '30d' });
 
     // 🛡️ إصلاح 8: إرجاع kyc_status مع بيانات المستخدم لعرض شارة الهوية في الواجهة فور التسجيل
     res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, phone_number: user.phone_number, kyc_status: user.kyc_status } });
@@ -3372,7 +3492,7 @@ app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), as
     for (const variant of variants) {
       const { data: found, error: lookupError } = await settingsSupabase
         .from('users')
-        .select('id, full_name, phone_number, password, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, created_at')
+        .select('id, full_name, phone_number, password, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, created_at, pwd_version')
         .eq('phone_number', variant)
         .maybeSingle();
       if (lookupError) { userError = lookupError; continue; }
@@ -3413,7 +3533,8 @@ app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), as
     // تسجيل دخول ناجح → إعادة تعيين المحاولات
     loginAttemptsMap.delete(lockKey);
 
-    const token = jwt.sign({ id: user.id, phone: user.phone_number }, JWT_SECRET, { expiresIn: '30d' });
+    // 🔒 الإصلاح الأمني 3: إصدار pwd_v في التوكن — يُستخدم لإبطال الجلسات عند تغيير كلمة المرور
+    const token = jwt.sign({ id: user.id, phone: user.phone_number, pwd_v: Number(user.pwd_version) || 0 }, JWT_SECRET, { expiresIn: '30d' });
     // 🛡️ إصلاح 8: إرجاع kyc_status مع بيانات المستخدم لعرض شارة الهوية فور الدخول
     res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, phone_number: user.phone_number, kyc_status: user.kyc_status } });
   } catch (err) {
@@ -3731,6 +3852,54 @@ app.post('/api/withdrawals', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1
 });
 
 
+// 🔒 الإصلاح الأمني 3: مسار تغيير كلمة المرور — يُبطل كل الجلسات القديمة برفع pwd_version
+app.post('/api/user/change-password', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }), async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body || {};
+
+    // التحقق من المدخلات: كلمة المرور الجديدة 8 أحرف على الأقل
+    if (!current_password || !new_password || typeof new_password !== 'string') {
+      return res.status(400).json({ success: false, error: 'يرجى إدخال كلمة المرور الحالية والجديدة.' });
+    }
+    if (String(new_password).length < 8) {
+      return res.status(400).json({ success: false, error: 'كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل.' });
+    }
+    if (String(new_password) === String(current_password)) {
+      return res.status(400).json({ success: false, error: 'كلمة المرور الجديدة يجب أن تختلف عن الحالية.' });
+    }
+
+    // جلب كلمة المرور الحالية والتحقق منها
+    const { data: u, error: uErr } = await supabase.from('users')
+      .select('id, password, pwd_version')
+      .eq('id', req.user.id)
+      .maybeSingle();
+    if (uErr) throw uErr;
+    if (!u) return res.status(404).json({ success: false, error: 'الحساب غير موجود.' });
+
+    const valid = await bcrypt.compare(String(current_password), u.password || '');
+    if (!valid) return res.status(400).json({ success: false, error: 'كلمة المرور الحالية غير صحيحة.' });
+
+    // تجزئة كلمة المرور الجديدة ورفع الإصدار لإبطال كل الجلسات القديمة
+    const newHash = await bcrypt.hash(String(new_password), 10);
+    const nextVersion = (Number(u.pwd_version) || 0) + 1;
+    const { error: updErr } = await supabase.from('users')
+      .update({ password: newHash, pwd_version: nextVersion })
+      .eq('id', req.user.id);
+    if (updErr) throw updErr;
+
+    // إصدار توكن جديد لهذه الجلسة فقط (يحمل الإصدار الجديد pwd_v)
+    const { data: fresh } = await supabase.from('users')
+      .select('id, phone_number, pwd_version')
+      .eq('id', req.user.id)
+      .maybeSingle();
+    const token = jwt.sign({ id: req.user.id, phone: (fresh && fresh.phone_number) || req.user.phone, pwd_v: nextVersion }, JWT_SECRET, { expiresIn: '30d' });
+
+    return res.json({ success: true, token, message: 'تم تغيير كلمة المرور بنجاح وإنهاء جميع الجلسات الأخرى.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/user/kyc', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }), async (req, res) => {
   try {
     // 🛡️ إصلاح 15: تحقق من وجود المستند ومن صيغة base64 قبل الرفع
@@ -3760,7 +3929,7 @@ app.post('/api/user/kyc', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1000
 app.get('/api/user/me', authenticateUser, async (req, res) => {
   try {
     const { data: user, error } = await supabase.from('users')
-      .select('id, full_name, phone_number, kyc_status, kyc_doc, telegram_chat_id, created_at')
+      .select('id, full_name, phone_number, kyc_status, telegram_chat_id, created_at')
       .eq('id', req.user.id)
       .maybeSingle();
 
@@ -3901,19 +4070,45 @@ app.get('/api/admin/withdrawals', authenticateAdmin, async (req, res) => {
   }
 });
 
+// 🔒 الإصلاح الأمني 1: مسار معاينة وثيقة هوية — رابط موقّع مؤقت فقط (لا روابط عامة دائمة)
+app.get('/api/admin/users/kyc-doc/:userId', authenticateAdmin, async (req, res) => {
+  try {
+    const { data: u } = await supabase.from('users')
+      .select('id, kyc_doc')
+      .eq('id', req.params.userId)
+      .maybeSingle();
+    if (!u || !u.kyc_doc) return res.status(404).json({ success: false, error: 'لا توجد وثيقة هوية مرفوعة لهذا المستخدم' });
+
+    const signedUrl = await getSignedDocUrl(u.kyc_doc);
+    if (!signedUrl) return res.status(404).json({ success: false, error: 'تعذر توليد رابط المعاينة — تأكد من ضبط الحاوية maksab-uploads' });
+
+    res.json({ success: true, url: signedUrl, expires_in: KYC_SIGNED_URL_TTL });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
   try {
     const { data, error } = await settingsSupabase
       .from('users')
-      .select('id, full_name, phone_number, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, onesignal_player_id, created_at')
+      .select('id, full_name, phone_number, kyc_status, is_blocked, referred_by, telegram_chat_id, onesignal_player_id, created_at, kyc_doc')
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('❌ خطأ Supabase عند جلب المستثمرين:', error.message);
+      console.error('❌ خطأ Supabase عند جلب المستخدمين:', error.message);
       return res.status(400).json({ success: false, error: error.message });
     }
 
-    return res.json({ success: true, data: data || [] });
+    // 🔒 الإصلاح الأمني 1: لا يُعاد رابط الوثيقة للواجهة أبداً — boolean فقط
+    // (الرابط الحقيقي يُولَّد لحظة المعاينة عبر /api/admin/users/kyc-doc/:userId كرابط موقّع مؤقت)
+    const users = (data || []).map(function(u) {
+      return { id: u.id, full_name: u.full_name, phone_number: u.phone_number, kyc_status: u.kyc_status,
+               is_blocked: u.is_blocked, referred_by: u.referred_by, telegram_chat_id: u.telegram_chat_id,
+               onesignal_player_id: u.onesignal_player_id, created_at: u.created_at,
+               has_kyc_doc: !!(u.kyc_doc && String(u.kyc_doc).length > 0) };
+    });
+    return res.json({ success: true, data: users });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -3947,7 +4142,11 @@ app.patch('/api/admin/users/verify-kyc', authenticateAdmin, async (req, res) => 
       return res.status(400).json({ success: false, error: 'لا توجد وثيقة هوية مرفوعة لهذا المستخدم لرفضها.' });
     }
 
-    const { error } = await supabase.from('users').update({ kyc_status: decision }).eq('id', userId);
+    // 🔒 الإصلاح الأمني 1: عند الرفض نحذف الوثيقة — لا تُترك وثيقة حساسة لحساب مرفوض
+    const updateFields = { kyc_status: decision };
+    if (decision === 'rejected') updateFields.kyc_doc = null;
+
+    const { error } = await supabase.from('users').update(updateFields).eq('id', userId);
     if (error) throw error;
 
     // 📢 إشعار المستثمر بالقرار عبر كل القنوات (in-app + OneSignal + تيليجرام)
