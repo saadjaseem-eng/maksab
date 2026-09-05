@@ -1722,7 +1722,7 @@ async function submitWithdraw() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       amount: amount,
-      payment_method: method, // ترسل إما ZainCash أو SuperKey
+      payment_method: method, // ترسل إما ZainCash أو SuperQi
       account_details: account,
       wallet_type: 'profit' // مقيد بأرباح الباقات المكتملة
     })
