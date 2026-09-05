@@ -3015,7 +3015,12 @@ const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 دقيقة
 app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), async (req, res) => {
   try {
     const { phone_number, password } = req.body;
-    const phoneKey = phone_number ? phone_number.trim() : '';
+
+    if (!phone_number || !password) {
+      return res.status(400).json({ success: false, error: 'يرجى تقديم رقم الهاتف وكلمة المرور' });
+    }
+
+    const phoneKey = phone_number.trim();
     const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
     const lockKey = phoneKey + '|' + clientIp;
 
@@ -3026,9 +3031,16 @@ app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }), as
       return res.status(429).json({ success: false, error: 'تم قفل الحساب مؤقتاً بسبب محاولات دخول خاطئة متكررة. يرجى المحاولة بعد ' + remainingMin + ' دقيقة.' });
     }
 
-    const { data: user, error } = await supabase.from('users').select('id, full_name, phone_number, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, onesignal_player_id, created_at').eq('phone_number', phoneKey).single();
+    // تم إضافة عمود 'password' واستخدام 'settingsSupabase' وتعديل .maybeSingle()
+    const { data: user, error } = await settingsSupabase
+      .from('users')
+      .select('id, full_name, phone_number, password, kyc_status, kyc_doc, is_blocked, referred_by, telegram_chat_id, created_at')
+      .eq('phone_number', phoneKey)
+      .maybeSingle();
 
-    if (error || !user) throw new Error('بيانات الدخول غير صحيحة');
+    if (error || !user || !user.password) {
+      throw new Error('بيانات الدخول غير صحيحة');
+    }
 
     if (user.is_blocked) {
       return res.status(403).json({ success: false, error: 'تم تجميد حسابك بقرار إداري. يرجى مراجعة الدعم الفني.' });
