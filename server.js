@@ -1090,96 +1090,103 @@ app.get('/app', (req, res) => {
           </div>
 
           <!-- تبويب 1: العمليات -->
-          <div id="tab-finance" class="tab-content">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
-              <div class="section-card">
-                <h3>شحن رصيد لشراء الباقات</h3>
-                <input type="number" id="deposit-amount" placeholder="المبلغ بالدينار العراقي" min="100000" max="1000000" style="margin-bottom:5px;">
-                <p style="font-size:11px; color:var(--text-muted); margin:0 0 10px 0;">📊 الحد الأدنى للشحن: <strong style="color:var(--accent-gold);">100,000 د.ع</strong> — الحد الأقصى: <strong style="color:var(--accent-gold);">1,000,000 د.ع</strong></p>
-                <input type="text" id="deposit-ref" placeholder="رقم التحويل (Ref ID)" style="margin-bottom:10px;">
-                <input type="file" id="deposit-file" accept="image/*" style="margin-bottom:10px;">
-                <button class="btn-gold" onclick="submitDeposit()" id="btn-dep">تأكيد شحن الرصيد</button>
-                <p id="deposit-msg" style="font-size:12px; font-weight:bold;"></p>
-              </div>
+<div id="tab-finance" class="tab-content">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
+    
+    <!-- كارت الشحن -->
+    <div class="section-card">
+      <h3>شحن رصيد لشراء الباقات</h3>
+      <input type="number" id="deposit-amount" placeholder="المبلغ بالدينار العراقي" min="100000" max="1000000" style="margin-bottom:5px;">
+      <p style="font-size:11px; color:var(--text-muted); margin:0 0 10px 0;">📊 الحد الأدنى للشحن: <strong style="color:var(--accent-gold);">100,000 د.ع</strong> — الحد الأقصى: <strong style="color:var(--accent-gold);">1,000,000 د.ع</strong></p>
+      <input type="text" id="deposit-ref" placeholder="رقم التحويل (Ref ID)" style="margin-bottom:10px;">
+      <input type="file" id="deposit-file" accept="image/*" style="margin-bottom:10px;">
+      <button class="btn-gold" onclick="submitDeposit()" id="btn-dep">تأكيد شحن الرصيد</button>
+      <p id="deposit-msg" style="font-size:12px; font-weight:bold;"></p>
+    </div>
 
-            <div class="section-card">
-  <h3>سحب الأرباح والأرصدة</h3>
-  
-  <!-- المبلغ -->
-  <input type="number" id="withdraw-amount" placeholder="المبلغ بالدينار العراقي" style="margin-bottom:10px;">
-  
-  <!-- مصدر الرصيد - مقيد بأرباح الباقات المكتملة فقط -->
-  <select id="withdraw-wallet" style="margin-bottom:10px; opacity:0.8; cursor:not-allowed;" disabled>
-    <option value="profit">أرباح الباقات المكتملة فقط</option>
-  </select>
-  
-  <!-- القائمة المنسدلة لاختيار طريقة السحب -->
-  <select id="withdraw-method" onchange="updateWithdrawPlaceholder()" style="margin-bottom:10px;">
-    <option value="ZainCash">زين كاش (ZainCash)</option>
-    <option value="SuperKey">حساب سوبر كي (SuperQi)</option>
-  </select>
-  
-  <!-- حقل إدخال رقم المحفظة / الحساب -->
-  <input type="text" id="withdraw-account" placeholder="أدخل رقم محفظة زين كاش (078xxxxxxxx)" style="margin-bottom:10px;">
-  
-  <!-- زر إرسال الطلب -->
-  <button class="btn-gold" style="background:var(--danger-red); color:white;" onclick="submitWithdraw()">طلب السحب المالي</button>
-  <p id="withdraw-msg" style="font-size:12px; font-weight:bold; margin-top:5px;"></p>
-</div>
+    <!-- كارت السحب -->
+    <div class="section-card">
+      <h3>سحب الأرباح والأرصدة</h3>
+      
+      <!-- المبلغ -->
+      <input type="number" id="withdraw-amount" placeholder="المبلغ بالدينار العراقي" style="margin-bottom:10px;">
+      
+      <!-- مصدر الرصيد - مقيد بأرباح الباقات المكتملة فقط -->
+      <select id="withdraw-wallet" style="margin-bottom:10px; opacity:0.8; cursor:not-allowed;" disabled>
+        <option value="profit">أرباح الباقات المكتملة فقط</option>
+      </select>
+      
+      <!-- القائمة المنسدلة لاختيار طريقة السحب -->
+      <select id="withdraw-method" onchange="updateWithdrawPlaceholder()" style="margin-bottom:10px;">
+        <option value="ZainCash">زين كاش (ZainCash)</option>
+        <option value="SuperKey">حساب سوبر كي (SuperQi)</option>
+      </select>
+      
+      <!-- حقل إدخال رقم المحفظة / الحساب -->
+      <input type="text" id="withdraw-account" placeholder="أدخل رقم محفظة زين كاش (078xxxxxxxx)" style="margin-bottom:10px;">
+      
+      <!-- زر إرسال الطلب -->
+      <button class="btn-gold" style="background:var(--danger-red); color:white;" onclick="submitWithdraw()">طلب السحب المالي</button>
+      <p id="withdraw-msg" style="font-size:12px; font-weight:bold; margin-top:5px;"></p>
+    </div>
 
-            <div class="section-card">
-              <h3><i class="fa-solid fa-list-check"></i> السجل الموحد لجميع المعاملات</h3>
-              <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
-                <select id="tx-filter" onchange="renderTxList()" style="flex:1; min-width:150px; padding:8px; background:#0f172a; border:1px solid var(--border-color); color:var(--text-light); border-radius:8px;">
-                  <option value="all">جميع المعاملات</option>
-                  <option value="deposit">الشحنات فقط</option>
-                  <option value="withdrawal">السحوبات فقط</option>
-                  <option value="package">الباقات الاستثمارية فقط</option>
-                </select>
-              </div>
-              <div id="user-history"></div>
-            </div>
-          </div>
+    <!-- سجل المعاملات -->
+    <div class="section-card" style="grid-column: 1 / -1;">
+      <h3><i class="fa-solid fa-list-check"></i> السجل الموحد لجميع المعاملات</h3>
+      <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <select id="tx-filter" onchange="renderTxList()" style="flex:1; min-width:150px; padding:8px; background:#0f172a; border:1px solid var(--border-color); color:var(--text-light); border-radius:8px;">
+          <option value="all">جميع المعاملات</option>
+          <option value="deposit">الشحنات فقط</option>
+          <option value="withdrawal">السحوبات فقط</option>
+          <option value="package">الباقات الاستثمارية فقط</option>
+        </select>
+      </div>
+      <div id="user-history"></div>
+    </div>
 
-          <!-- تبويب 2: التوثيق وربط تلجرام -->
-          <div id="tab-account" class="tab-content">
-            <div class="section-card" style="border:1px solid #0088cc;">
-              <h3 style="color:#0088cc;"><i class="fa-brands fa-telegram"></i> إشعارات تلجرام الفورية 📲</h3>
-              <p style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">ربط حسابك ببوت تلجرام يُتيح لك استقبال تنبيهات شحن الرصيد، السحب، وصرف أرباح الباقات مباشرة على هاتفك.</p>
-              <a id="telegram-link" href="#" target="_blank" class="btn-gold" style="display:inline-block; text-decoration:none; text-align:center; background:#0088cc; color:white; width:100%;">
-                <i class="fa-brands fa-telegram"></i> اضغط هنا لتفعيل إشعارات تلجرام فوراً
-              </a>
-            </div>
+  </div> <!-- إغلاق حاوية الـ Grid -->
+</div> <!-- ⚠️ تم إضافته هنا: وسم إغلاق تبويب العمليات tab-finance ليفصل التبويبات عن بعضها -->
 
-            <div class="section-card">
-              <h3>توثيق الهوية (KYC Storage)</h3>
-              <input type="file" id="kyc-file" accept="image/*" style="margin-bottom:10px;">
-              <button class="btn-gold" onclick="uploadKYC()">رفع الهوية بأمان</button>
-              <p id="kyc-msg" style="font-size:12px;"></p>
-            </div>
+<!-- تبويب 2: التوثيق وربط تلجرام -->
+<div id="tab-account" class="tab-content">
+  <div class="section-card" style="border:1px solid #0088cc;">
+    <h3 style="color:#0088cc;"><i class="fa-brands fa-telegram"></i> إشعارات تلجرام الفورية 📲</h3>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:15px;">ربط حسابك ببوت تلجرام يُتيح لك استقبال تنبيهات شحن الرصيد، السحب، وصرف أرباح الباقات مباشرة على هاتفك.</p>
+    <a id="telegram-link" href="#" target="_blank" class="btn-gold" style="display:inline-block; text-decoration:none; text-align:center; background:#0088cc; color:white; width:100%;">
+      <i class="fa-brands fa-telegram"></i> اضغط هنا لتفعيل إشعارات تلجرام فوراً
+    </a>
+  </div>
 
-            <div class="section-card">
-              <h3>رابط الإحالة الخاص بك (2%)</h3>
-              <div style="display:flex; gap:8px;">
-                <input type="text" id="ref-link" readonly style="color:var(--accent-gold);">
-                <button onclick="copyRefLink()" style="background:#0f172a; border:1px solid var(--accent-gold); color:var(--accent-gold); padding:0 15px; border-radius:8px; cursor:pointer;">نسخ</button>
-              </div>
-            </div>
+  <div class="section-card">
+    <h3>توثيق الهوية (KYC Storage)</h3>
+    <input type="file" id="kyc-file" accept="image/*" style="margin-bottom:10px;">
+    <button class="btn-gold" onclick="uploadKYC()">رفع الهوية بأمان</button>
+    <p id="kyc-msg" style="font-size:12px;"></p>
+  </div>
 
-            <div class="section-card">
-              <h3><i class="fa-solid fa-share-nodes"></i> شبكة الإحالات</h3>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:15px;">
-                <div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); text-align:center;">
-                  <div style="font-size:26px; font-weight:bold; color:var(--accent-gold);" id="ref-count">0</div>
-                  <div style="font-size:12px; color:var(--text-muted);">عدد المستثمرين المحالين</div>
-                </div>
-                <div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); text-align:center;">
-                  <div style="font-size:26px; font-weight:bold; color:var(--success-green);" id="ref-commissions">0 د.ع</div>
-                  <div style="font-size:12px; color:var(--text-muted);">إجمالي عمولات الإحالة (2%)</div>
-                </div>
-              </div>
-              <div id="ref-network-list" style="max-height:300px; overflow-y:auto;"></div>
-            </div>
+  <div class="section-card">
+    <h3>رابط الإحالة الخاص بك (2%)</h3>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="ref-link" readonly style="color:var(--accent-gold);">
+      <button onclick="copyRefLink()" style="background:#0f172a; border:1px solid var(--accent-gold); color:var(--accent-gold); padding:0 15px; border-radius:8px; cursor:pointer;">نسخ</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h3><i class="fa-solid fa-share-nodes"></i> شبكة الإحالات</h3>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:15px;">
+      <div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); text-align:center;">
+        <div style="font-size:26px; font-weight:bold; color:var(--accent-gold);" id="ref-count">0</div>
+        <div style="font-size:12px; color:var(--text-muted);">عدد المستثمرين المحالين</div>
+      </div>
+      <div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid var(--border-color); text-align:center;">
+        <div style="font-size:26px; font-weight:bold; color:var(--success-green);" id="ref-commissions">0 د.ع</div>
+        <div style="font-size:12px; color:var(--text-muted);">إجمالي عمولات الإحالة (2%)</div>
+      </div>
+    </div>
+    <div id="ref-network-list" style="max-height:300px; overflow-y:auto;"></div>
+  </div>
+</div> <!-- ⚠️ تم إضافته هنا: وسم إغلاق تبويب التوثيق tab-account -->
 
             <div class="section-card" style="border:1px solid var(--accent-gold);">
               <h3><i class="fa-solid fa-mobile-screen"></i> تثبيت التطبيق على جهازك</h3>
