@@ -1761,7 +1761,7 @@ app.get('/app', (req, res) => {
           container.innerHTML = notifs.map(function(n) {
             var readClass = n.is_read ? 'read' : '';
             var safeTitle = escHtml(n.title || '');
-            var safeMsg = escHtml(safeMsg || '');
+            var safeMsg = escHtml(n.message || '');
             var dateStr = new Date(n.created_at).toLocaleString('ar-IQ');
             return '<div class="notif-full-card ' + readClass + '">' +
                    '<div class="notif-full-title"><i class="fa-solid fa-circle-info" style="color:var(--accent-gold);"></i> ' + safeTitle + '</div>' +
