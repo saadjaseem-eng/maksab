@@ -3272,114 +3272,67 @@ app.post('/api/deposits', authenticateUser, async (req, res) => {
   }
 });
 
-import React, { useState } from 'react';
-import axios from 'axios';
+app.post('/api/withdrawals', authenticateUser, rateLimit({ windowMs: 60 * 60 * 1000, max: 10 }), async (req, res) => {
+  try {
+    const { amount, payment_method, account_details } = req.body;
+    
+    // التحقق من صحة المبلغ المالي
+    const numAmount = typeof positiveAmount === 'function' ? positiveAmount(amount, 100000000) : Number(amount);
 
-export default function WithdrawalSection({ userCompletedProfit }) {
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState('zaincash'); // 'zaincash' | 'superkey'
-  const [accountNumber, setAccountNumber] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleWithdraw = async (e) => {
-    e.preventDefault();
-    if (!amount || amount <= 0) return alert('يرجى تحديد مبلغ سحب صالح');
-    if (!accountNumber) return alert('يرجى إدخال رقم المحفظة / الحساب');
-
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('userToken');
-      const res = await axios.post('/api/withdraw', {
-        amount: Number(amount),
-        method, // 'zaincash' أو 'superkey'
-        account_number: accountNumber
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (res.data.success) {
-        alert('تم تقديم طلب السحب بنجاح، بانتظار موافقة الإدارة.');
-        setAmount('');
-        setAccountNumber('');
-      }
-    } catch (err) {
-      alert(err.response?.data?.error || 'حدث خطأ أثناء تقديم طلب السحب');
-    } finally {
-      setLoading(false);
+    if (!numAmount || numAmount <= 0 || !payment_method || !account_details) {
+      return res.status(400).json({ success: false, error: 'بيانات السحب غير صحيحة.' });
     }
-  };
 
-  return (
-    <div className="bg-slate-800/90 p-6 rounded-2xl border border-slate-700 text-white shadow-xl">
-      <h3 className="text-xl font-bold mb-4 text-center text-slate-100">سحب الأرباح والأرصدة</h3>
-      
-      <form onSubmit={handleWithdraw} className="space-y-4">
-        {/* المبلغ المراد سحبه */}
-        <div>
-          <input
-            type="number"
-            placeholder="المبلغ بالدينار العراقي"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-amber-500"
-          />
-          <p className="text-xs text-emerald-400 mt-1">
-            الأرباح المتاحة للسحب (الباقات المكتملة): {userCompletedProfit?.toLocaleString() || 0} د.ع
-          </p>
-        </div>
+    // 1. حساب إجمالي أرباح الباقات المكتملة فقط للمستثمر
+    const { data: completedPackages, error: pkgErr } = await settingsSupabase
+      .from('user_packages')
+      .select('earned_profit')
+      .eq('user_id', req.user.id)
+      .eq('status', 'completed');
 
-        {/* تحديد مصدر الرصيد - مقيد حصراً بأرباح الباقات المكتملة */}
-        <div>
-          <select 
-            disabled 
-            className="w-full bg-slate-900/60 border border-slate-700 rounded-xl p-3 text-slate-400 cursor-not-allowed"
-          >
-            <option>أرباح الباقات المكتملة فقط</option>
-          </select>
-        </div>
+    if (pkgErr) throw pkgErr;
 
-        {/* القائمة المنسدلة لاختيار طريقة السحب */}
-        <div>
-          <select
-            value={method}
-            onChange={(e) => {
-              setMethod(e.target.value);
-              setAccountNumber(''); // إعادة تعيين الرقم عند تغيير الطريقة
-            }}
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-amber-500"
-          >
-            <option value="zaincash">زين كاش (ZainCash)</option>
-            <option value="superkey">حساب سوبر كي (Super Key)</option>
-          </select>
-        </div>
+    const totalCompletedProfit = (completedPackages || []).reduce((a, x) => a + Number(x.earned_profit || 0), 0);
 
-        {/* حقل إدخال الرقم حسب الاختيار */}
-        <div>
-          <input
-            type="text"
-            value={accountNumber}
-            onChange={(e) => setAccountNumber(e.target.value)}
-            placeholder={
-              method === 'zaincash'
-                ? 'رقم محفظة زين كاش (مثال: 077xxxxxxxx)'
-                : 'رقم حساب سوبر كي الخاص بك'
-            }
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-amber-500"
-          />
-        </div>
+    // 2. حساب إجمالي السحوبات السابقة (المقبولة والمعلقة)
+    const { data: withRows, error: withErr } = await settingsSupabase
+      .from('withdrawals')
+      .select('amount')
+      .eq('user_id', req.user.id)
+      .in('status', ['approved', 'pending']);
 
-        {/* زر إرسال الطلب */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-red-500 hover:bg-red-600 text-white font-bold p-3 rounded-xl transition duration-200 disabled:opacity-50"
-        >
-          {loading ? 'جاري الإرسال...' : 'طلب السحب المالي'}
-        </button>
-      </form>
-    </div>
-  );
-}
+    if (withErr) throw withErr;
+
+    const totalWithdrawn = (withRows || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+
+    // الرصيد الصافي المتاح للسحب
+    const available = totalCompletedProfit - totalWithdrawn;
+
+    if (numAmount > available) {
+      return res.status(400).json({
+        success: false,
+        error: `الرصيد المتاح للسحب من أرباح الباقات المكتملة هو ${available.toLocaleString()} د.ع فقط.`
+      });
+    }
+
+    // 3. تسجيل طلب السحب
+    const { error } = await settingsSupabase.from('withdrawals').insert([{
+      user_id: req.user.id,
+      phone_number: req.user.phone || req.user.phone_number,
+      amount: numAmount,
+      payment_method, // يرسل إما ZainCash أو SuperKey
+      account_details, // يحتوي على رقم المحفظة أو رقم الحساب
+      status: 'pending',
+      wallet_type: 'profit'
+    }]);
+
+    if (error) throw error;
+
+    return res.json({ success: true, message: 'تم تقديم طلب السحب بنجاح' });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 app.post('/api/user/kyc', authenticateUser, async (req, res) => {
   try {
