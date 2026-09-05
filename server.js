@@ -1102,18 +1102,30 @@ app.get('/app', (req, res) => {
                 <p id="deposit-msg" style="font-size:12px; font-weight:bold;"></p>
               </div>
 
-              <div class="section-card">
-                <h3>سحب الأرباح والأرصدة</h3>
-                <input type="number" id="withdraw-amount" placeholder="المبلغ بالدينار العراقي" style="margin-bottom:10px;">
-                <select id="withdraw-wallet" style="margin-bottom:10px;">
-                  <option value="profit">من محفظة الأرباح (متاح دائماً)</option>
-                  <option value="capital">من رأس المال المتاح (غير المستثمر)</option>
-                </select>
-                <input type="text" id="withdraw-account" placeholder="رقم محفظة المستلم (ZainCash / محفظة)" style="margin-bottom:10px;">
-                <button class="btn-gold" style="background:var(--danger-red); color:white;" onclick="submitWithdraw()">طلب السحب المالي</button>
-                <p id="withdraw-msg" style="font-size:12px; font-weight:bold;"></p>
-              </div>
-            </div>
+            <div class="section-card">
+  <h3>سحب الأرباح والأرصدة</h3>
+  
+  <!-- المبلغ -->
+  <input type="number" id="withdraw-amount" placeholder="المبلغ بالدينار العراقي" style="margin-bottom:10px;">
+  
+  <!-- مصدر الرصيد - مقيد بأرباح الباقات المكتملة فقط -->
+  <select id="withdraw-wallet" style="margin-bottom:10px; opacity:0.8; cursor:not-allowed;" disabled>
+    <option value="profit">أرباح الباقات المكتملة فقط</option>
+  </select>
+  
+  <!-- القائمة المنسدلة لاختيار طريقة السحب -->
+  <select id="withdraw-method" onchange="updateWithdrawPlaceholder()" style="margin-bottom:10px;">
+    <option value="ZainCash">زين كاش (ZainCash)</option>
+    <option value="SuperKey">حساب سوبر كي (Super Key)</option>
+  </select>
+  
+  <!-- حقل إدخال رقم المحفظة / الحساب -->
+  <input type="text" id="withdraw-account" placeholder="أدخل رقم محفظة زين كاش (078xxxxxxxx)" style="margin-bottom:10px;">
+  
+  <!-- زر إرسال الطلب -->
+  <button class="btn-gold" style="background:var(--danger-red); color:white;" onclick="submitWithdraw()">طلب السحب المالي</button>
+  <p id="withdraw-msg" style="font-size:12px; font-weight:bold; margin-top:5px;"></p>
+</div>
 
             <div class="section-card">
               <h3><i class="fa-solid fa-list-check"></i> السجل الموحد لجميع المعاملات</h3>
@@ -1676,16 +1688,55 @@ app.get('/app', (req, res) => {
           } catch(e) { msg.innerText = 'خطأ في الرفع'; }
         }
 
-        async function submitWithdraw() {
-          var amount = document.getElementById('withdraw-amount').value;
-          var account = document.getElementById('withdraw-account').value;
-          var wallet = document.getElementById('withdraw-wallet').value;
-          var msg = document.getElementById('withdraw-msg');
+       // دالة لتغيير نص حقل الإدخال تلقائياً حسب الاختيار (زين كاش / سوبر كي)
+function updateWithdrawPlaceholder() {
+  var method = document.getElementById('withdraw-method').value;
+  var accountInput = document.getElementById('withdraw-account');
+  if (method === 'ZainCash') {
+    accountInput.placeholder = 'أدخل رقم محفظة زين كاش (078xxxxxxxx)';
+  } else {
+    accountInput.placeholder = 'أدخل رقم حساب سوبر كي الخاص بك';
+  }
+}
 
-          var data = await fetchWithAuth('/api/withdrawals', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ amount: amount, payment_method: 'ZainCash', account_details: account, wallet_type: wallet }) });
-          if (data.success) { msg.innerText = '✅ تم تقديم طلب السحب'; loadUserData(); } else msg.innerText = '❌ ' + data.error;
-        }
+// دالة إرسال طلب السحب المعدلة
+async function submitWithdraw() {
+  var amount = document.getElementById('withdraw-amount').value;
+  var method = document.getElementById('withdraw-method').value; // جلب الطريقة المختارة
+  var account = document.getElementById('withdraw-account').value;
+  var msg = document.getElementById('withdraw-msg');
 
+  if (!amount || amount <= 0) {
+    msg.innerText = '❌ يرجى إدخال مبلغ سحب صحيح';
+    return;
+  }
+  if (!account) {
+    msg.innerText = '❌ يرجى إدخال رقم المحفظة / الحساب';
+    return;
+  }
+
+  msg.innerText = '⏳ جاري تقديم الطلب...';
+
+  var data = await fetchWithAuth('/api/withdrawals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount: amount,
+      payment_method: method, // ترسل إما ZainCash أو SuperKey
+      account_details: account,
+      wallet_type: 'profit' // مقيد بأرباح الباقات المكتملة
+    })
+  });
+
+  if (data && data.success) {
+    msg.innerText = '✅ تم تقديم طلب السحب بنجاح';
+    document.getElementById('withdraw-amount').value = '';
+    document.getElementById('withdraw-account').value = '';
+    if (typeof loadUserData === 'function') loadUserData();
+  } else {
+    msg.innerText = '❌ ' + (data.error || 'حدث خطأ أثناء تنفيذ الطلب');
+  }
+}
         async function uploadKYC() {
           var f = document.getElementById('kyc-file'); if (f.files.length === 0) return;
           document.getElementById('kyc-msg').innerText = 'جاري رفع وتشفير الهوية...';
